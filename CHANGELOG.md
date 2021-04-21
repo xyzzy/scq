@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 ```
+2021-04-21 15:54:33 Added: `scq.cc` by replacing front-end.
 2021-04-21 12:13:28 Added: Version used by other projects and original v0.4.
 2021-04-05 03:14:49 Added: `moonwalk` theme.
 2021-24-01 11:28:59 Historic commit.
