@@ -50,7 +50,11 @@
 #include <time.h>
 #include <limits>
 #include <getopt.h>
+#include <stdint.h>
+#include <string.h>
 #include <gd.h>
+
+#define MAXPALETTE 256
 
 using namespace std;
 
@@ -394,14 +398,6 @@ void fill_random(array3d<double> &a) {
 	}
 }
 
-double get_initial_temperature() {
-	return 2.0; // TODO: Figure out what to make this
-}
-
-double get_final_temperature() {
-	return 0.02; // TODO: Figure out what to make this
-}
-
 void random_permutation(int count, vector<int> &result) {
 	result.clear();
 	for (int i = 0; i < count; i++) {
@@ -742,9 +738,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	for (coarse_level = 1; coarse_level <= max_coarse_level; coarse_level++) {
 		int radius_width = (filter_weights.get_width() - 1) / 2,
 			radius_height = (filter_weights.get_height() - 1) / 2;
-		array2d<vector_fixed<double, 3> >
-			bi(max(3, b_vec.back().get_width() - 2),
-			   max(3, b_vec.back().get_height() - 2));
+		array2d<vector_fixed<double, 3> > bi(max(3, b_vec.back().get_width() - 2), max(3, b_vec.back().get_height() - 2));
 		for (int J_y = 0; J_y < bi.get_height(); J_y++) {
 			for (int J_x = 0; J_x < bi.get_width(); J_x++) {
 				for (int i_y = radius_height * 2; i_y < radius_height * 2 + 2; i_y++) {
@@ -760,9 +754,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		}
 		b_vec.push_back(bi);
 
-		array2d<vector_fixed<double, 3> >
-			ai(image.get_width() >> coarse_level,
-			   image.get_height() >> coarse_level);
+		array2d<vector_fixed<double, 3> > ai(image.get_width() >> coarse_level, image.get_height() >> coarse_level);
 		sum_coarsen(a_vec.back(), ai);
 		a_vec.push_back(ai);
 	}
@@ -778,8 +770,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	bool skip_palette_maintenance = false;
 	array2d<vector_fixed<double, 3> > s(palette.size(), palette.size());
 	compute_initial_s(s, coarse_variables, b_vec[coarse_level]);
-	array2d<vector_fixed<double, 3> > *j_palette_sum =
-		new array2d<vector_fixed<double, 3> >(coarse_variables.get_width(), coarse_variables.get_height());
+	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(coarse_variables.get_width(), coarse_variables.get_height());
 	compute_initial_j_palette_sum(*j_palette_sum, coarse_variables, palette);
 	while (coarse_level >= 0 || temperature > final_temperature) {
 		// Need to reseat this reference in case we changed p_coarse_variables
@@ -787,9 +778,9 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		array2d<vector_fixed<double, 3> > &a = a_vec[coarse_level];
 		array2d<vector_fixed<double, 3> > &b = b_vec[coarse_level];
 		vector_fixed<double, 3> middle_b = b_value(b, 0, 0, 0, 0);
-#if TRACE
+
 		cout << "Temperature: " << temperature << endl;
-#endif
+
 		int center_x = (b.get_width() - 1) / 2, center_y = (b.get_height() - 1) / 2;
 		int step_counter = 0;
 		for (int repeat = 0; repeat < repeats_per_temp; repeat++) {
@@ -834,12 +825,9 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
 					// will choose a value that makes the maximum e^100.
-					meanfield_logs.push_back(-(palette[v].dot_product(
-						p_i + middle_b.direct_product(
-							palette[v]))) / temperature);
-					if (meanfield_logs.back() > max_meanfield_log) {
+					meanfield_logs.push_back(-(palette[v].dot_product(p_i + middle_b.direct_product(palette[v]))) / temperature);
+					if (meanfield_logs.back() > max_meanfield_log)
 						max_meanfield_log = meanfield_logs.back();
-					}
 				}
 				for (unsigned int v = 0; v < palette.size(); v++) {
 					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 100));
@@ -861,9 +849,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					j_pal(0) += delta_m_iv * palette[v](0);
 					j_pal(1) += delta_m_iv * palette[v](1);
 					j_pal(2) += delta_m_iv * palette[v](2);
-					if (fabs(delta_m_iv) > 0.001 && !skip_palette_maintenance) {
+					if (fabs(delta_m_iv) > 0.001 && !skip_palette_maintenance)
 						update_s(s, coarse_variables, b, i_x, i_y, v, delta_m_iv);
-					}
 				}
 				int max_v = best_match_color(coarse_variables, i_x, i_y, palette);
 				// Only consider it a change if the colors are different enough
@@ -901,17 +888,15 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 #if TRACE
 			cout << "Pixels changed: " << pixels_changed << endl;
 #endif
-			if (skip_palette_maintenance) {
+			if (skip_palette_maintenance)
 				compute_initial_s(s, *p_coarse_variables, b_vec[coarse_level]);
-			}
 			refine_palette(s, coarse_variables, a, palette);
 			compute_initial_j_palette_sum(*j_palette_sum, coarse_variables, palette);
 		}
 
 		iters_at_current_level++;
 		skip_palette_maintenance = false;
-		if ((temperature <= final_temperature || coarse_level > 0) &&
-		    iters_at_current_level >= iters_per_level) {
+		if ((temperature <= final_temperature || coarse_level > 0) && iters_at_current_level >= iters_per_level) {
 			coarse_level--;
 			if (coarse_level < 0) break;
 			array3d<double> *p_new_coarse_variables = new array3d<double>(
@@ -930,9 +915,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			cout << "Image size: " << p_coarse_variables->get_width() << " " << p_coarse_variables->get_height() << endl;
 #endif
 		}
-		if (temperature > final_temperature) {
+		if (temperature > final_temperature)
 			temperature *= temperature_multiplier;
-		}
 	}
 
 	// This is normally not used, but is handy sometimes for debugging
@@ -953,8 +937,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 
 		for (int i_x = 0; i_x < image.get_width(); i_x++) {
 			for (int i_y = 0; i_y < image.get_height(); i_y++) {
-				quantized_image(i_x, i_y) =
-					best_match_color(coarse_variables, i_x, i_y, palette);
+				quantized_image(i_x, i_y) = best_match_color(coarse_variables, i_x, i_y, palette);
 			}
 		}
 		for (unsigned int v = 0; v < palette.size(); v++) {
@@ -969,21 +952,25 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	}
 }
 
+#include "octree.h"
+
 const char *arg_inputName;
 int arg_paletteSize;
 const char *arg_outputName;
+const char *opt_palette = NULL;
+const char *opt_opaque = NULL;
 float opt_stddev = 1.0;
-int opt_gridSize = 3;
+int opt_filterSize = 3;
 float opt_initialTemperature = 1;
 float opt_finalTemperature = 0.001;
 int opt_numLevels = 3;
-int opt_verbose;
+int opt_verbose = 0;
 int opt_seed = 0;
 
 void usage(const char *argv0, bool verbose) {
-        fprintf(stderr, "usage: %s [options] <input> <paletteSize> <outputGIF>\n", argv0);
+	fprintf(stderr, "usage: %s [options] <input> <paletteSize> <outputGIF>\n", argv0);
 
-        if (verbose) {
+	if (verbose) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "\t-h --help                   This list\n");
 		fprintf(stderr, "\t-v --verbose                Say more\n");
@@ -991,24 +978,29 @@ void usage(const char *argv0, bool verbose) {
 		fprintf(stderr, "\t   --initial-temperature=n  Set Initial temperature [default=%f]\n", opt_initialTemperature);
 		fprintf(stderr, "\t   --final-temperature=n    Set Final temperature [default=%f]\n", opt_finalTemperature);
 		fprintf(stderr, "\t-l --levels=n               Number of levels spanning temperature [default=%d]\n", opt_numLevels);
-		fprintf(stderr, "\t-g --grid=n                 Grid size 1=1x1, 3=3x3, 5=5x5 [default=%d]\n", opt_gridSize);
+		fprintf(stderr, "\t-f --filter=n               Filter 1=1x1, 3=3x3, 5=5x5 [default=%d]\n", opt_filterSize);
+		fprintf(stderr, "\t-p --palette=file           Fixed palette [default=%s]\n", opt_palette ? opt_palette : "");
+		fprintf(stderr, "\t-o --opaque=file            Additional opaque oytput [default=%s]\n", opt_opaque ? opt_opaque : "");
 	}
 }
+
 int main(int argc, char *argv[]) {
 	for (;;) {
 		int option_index = 0;
 		enum {
 			LO_INITIALTEMP = 1, LO_FINALTEMP,
-			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_GRID = 'g', LO_LEVELS = 'l'
+			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_PALETTE = 'p', LO_OPAQUE = 'o'
 		};
 		static struct option long_options[] = {
 			/* name, has_arg, flag, val */
 			{"stddev",              1, 0, LO_STDDEV},
 			{"final-temperature",   1, 0, LO_FINALTEMP},
-			{"gridsize",            1, 0, LO_GRID},
+			{"filter",              1, 0, LO_FILTER},
 			{"help",                0, 0, LO_HELP},
 			{"initial-temperature", 1, 0, LO_INITIALTEMP},
 			{"levels",              1, 0, LO_LEVELS},
+			{"palette",             1, 0, LO_PALETTE},
+			{"opaque",              1, 0, LO_OPAQUE},
 			{"seed",                1, 0, LO_SEED},
 			{"verbose",             0, 0, LO_VERBOSE},
 			{NULL,                  0, 0, 0}
@@ -1032,6 +1024,10 @@ int main(int argc, char *argv[]) {
 		switch (c) {
 			case LO_STDDEV:
 				opt_stddev = strtod(optarg, NULL);
+				if (opt_stddev <= 0) {
+					fprintf(stderr, "Std deviation must be > 0\\n");
+					exit(1);
+				}
 				break;
 			case LO_INITIALTEMP:
 				opt_initialTemperature = strtod(optarg, NULL);
@@ -1042,14 +1038,20 @@ int main(int argc, char *argv[]) {
 			case LO_LEVELS:
 				opt_numLevels = strtol(optarg, NULL, 10);
 				break;
+			case LO_PALETTE:
+				opt_palette = optarg;
+				break;
+			case LO_OPAQUE:
+				opt_opaque = optarg;
+				break;
 			case LO_SEED:
 				opt_seed = strtol(optarg, NULL, 10);
 				break;
-			case LO_GRID:
-				opt_gridSize = strtol(optarg, NULL, 10);
-				if (opt_gridSize != 1 && opt_gridSize != 3 && opt_gridSize != 5) {
-					fprintf(stderr, "Grid size must be one of 1, 3, or 5.\n");
-					return -1;
+			case LO_FILTER:
+				opt_filterSize = strtol(optarg, NULL, 10);
+				if (opt_filterSize != 1 && opt_filterSize != 3 && opt_filterSize != 5) {
+					fprintf(stderr, "Filter size must be one of 1, 3, or 5.\n");
+					exit(1);
 				}
 				break;
 
@@ -1079,16 +1081,84 @@ int main(int argc, char *argv[]) {
 	arg_paletteSize = strtol(argv[optind++], NULL, 10);
 	arg_outputName = argv[optind++];
 
-	if (arg_paletteSize < 2 || arg_paletteSize > 256)
-		printf("Number of colors must be at least 2 and no more than 256.\n");
+	if (arg_paletteSize < 2 || arg_paletteSize > MAXPALETTE)
+		printf("Number of colors must be at least 2 and no more than %d.\n", MAXPALETTE);
 
 	/*
 	 * Set random number generator
 	 */
-	if (opt_seed)
-		srand(opt_seed);
-	else
-		srand(time(NULL));
+	if (!opt_seed)
+		opt_seed = time(NULL);
+	srand(opt_seed);
+
+	/*
+	 * Construct weights
+	 */
+
+	// allocate structures
+	array2d<vector_fixed<double, 3> > filter1_weights(1, 1);
+	array2d<vector_fixed<double, 3> > filter3_weights(3, 3);
+	array2d<vector_fixed<double, 3> > filter5_weights(5, 5);
+
+	filter1_weights(0, 0)(0) = 1.0;
+	filter1_weights(0, 0)(1) = 1.0;
+	filter1_weights(0, 0)(2) = 1.0;
+
+	double sum = 0.0;
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			double w = exp(-sqrt((i - 1) * (i - 1) + (j - 1) * (j - 1)) / (opt_stddev * opt_stddev));
+			sum += w;
+			filter3_weights(i, j)(0) = w;
+			filter3_weights(i, j)(1) = w;
+			filter3_weights(i, j)(2) = w;
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			filter3_weights(i, j)(0) /= sum;
+			filter3_weights(i, j)(1) /= sum;
+			filter3_weights(i, j)(2) /= sum;
+		}
+	}
+	if (opt_verbose) {
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < 3; j++) {
+				printf("%5.2f ", filter3_weights(i, j)(0) / filter3_weights(0, 0)(0));
+			}
+			printf("\n");
+		}
+		printf("\n");
+	}
+
+	sum = 0.0;
+	int coef5[] = {1, 4, 6, 4, 1};
+	for (int i = 0; i < 5; i++) {
+		for (int j = 0; j < 5; j++) {
+			double w = exp(-sqrt((i - 2) * (i - 2) + (j - 2) * (j - 2)) / (opt_stddev * opt_stddev));
+			sum += w;
+			filter5_weights(i, j)(0) = w;
+			filter5_weights(i, j)(1) = w;
+			filter5_weights(i, j)(2) = w;
+		}
+	}
+	for (int i = 0; i < 5; i++) {
+		for (int j = 0; j < 5; j++) {
+			filter5_weights(i, j)(0) /= sum;
+			filter5_weights(i, j)(1) /= sum;
+			filter5_weights(i, j)(2) /= sum;
+		}
+	}
+
+	if (opt_verbose) {
+		for (int i = 0; i < 5; i++) {
+			for (int j = 0; j < 5; j++) {
+				printf("%5.2f ", filter5_weights(i, j)(0) / filter5_weights(0, 0)(0));
+			}
+			printf("\n");
+		}
+		printf("\n");
+	}
 
 	/*
 	 * Load input image and extract width/height
@@ -1098,7 +1168,7 @@ int main(int argc, char *argv[]) {
 	FILE *fil = fopen(arg_inputName, "r");
 	if (fil == NULL) {
 		fprintf(stderr, "Could not open source image \"%s\"\n", arg_inputName);
-		return -1;
+		exit(1);
 	}
 
 	// probe file type and load
@@ -1115,7 +1185,7 @@ int main(int argc, char *argv[]) {
 	}
 	if (im == NULL) {
 		fprintf(stderr, "Could not load source image %x %x\n", c[0], c[1]);
-		return -1;
+		exit(1);
 	}
 	fclose(fil);
 
@@ -1126,158 +1196,200 @@ int main(int argc, char *argv[]) {
 
 	// allocate structures
 	array2d<vector_fixed<double, 3> > image(width, height);
-	array2d<vector_fixed<double, 3> > filter1_weights(1, 1);
-	array2d<vector_fixed<double, 3> > filter3_weights(3, 3);
-	array2d<vector_fixed<double, 3> > filter5_weights(5, 5);
 	array2d<int> quantized_image(width, height);
 	vector<vector_fixed<double, 3> > palette;
+	uint8_t pixelSet[((width * height) >> 3) + 1];
+	memset(pixelSet, 0, ((width * height) >> 3) + 1);
 
-	// load image
+	int numColours = arg_paletteSize;
+	int transparent = -1;
+
+	/*
+	 * load image
+	 */
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
+			int yx = y * width + x;
 			int v = gdImageGetTrueColorPixel(im, x, y);
 
 			int a = (v >> 24) & 0xff; // 0=opaque 0x7f=transparent
-			double r = ((v >> 16) & 0xff) / 255.0;
-			double g = ((v >> 8) & 0xff) / 255.0;
-			double b = (v & 0xff) / 255.0;
+			int r = (v >> 16) & 0xff;
+			int g = (v >> 8) & 0xff;
+			int b = (v >> 0) & 0xff;
 
 			if (a) {
-				// (temporary) transparent -> gray50
+				// load gray50 into a0
 				image(x, y)(0) = 0.5;
 				image(x, y)(1) = 0.5;
 				image(x, y)(2) = 0.5;
+
+				if (transparent < 0) {
+					// remove a colour for use as transparency
+					transparent = --numColours;
+				}
+
 			} else {
-				image(x, y)(0) = r;
-				image(x, y)(1) = g;
-				image(x, y)(2) = b;
+				// load gray50 into a0
+				image(x, y)(0) = r / 255.0;
+				image(x, y)(1) = g / 255.0;
+				image(x, y)(2) = b / 255.0;
+
+				// add endpoint to nodeHeap
+				heapAdd(&nodeHeap, nodeInsert(r, g, b));
+
+				// enable pixel
+				pixelSet[yx >> 3] |= 1 << (yx & 7);
 			}
 		}
 	}
 	gdImageDestroy(im);
 
-	if (1) {
-		double sumR=0, sumG=0, sumB=0;
-		int cnt=0;
+	/*
+	 * construct initial palette
+	 */
+	if (!opt_palette) {
+		/*
+		 * Octree palette
+		 */
 
-		for (int y = 0; y < height; y++) {
-			for (int x = 0; x < width; x++) {
-				sumR += image(x, y)(0) * 255;
-				sumG += image(x, y)(1) * 255;
-				sumB += image(x, y)(2) * 255;
-				cnt++;
-			}
+		// merge colours until final palette count (heap contains empty root node)
+		while (nodeHeap.count - 1 > numColours)
+			nodeFold(heapPop(&nodeHeap));
+
+		// inject colours into palette
+		for (int i = 1; i < nodeHeap.count; i++) {
+			octNode_t *got = nodeHeap.ppNodes[i];
+
+			got->r = got->r / got->count;
+			got->g = got->g / got->count;
+			got->b = got->b / got->count;
+
+			printf("%3ld | %3u %3u %3u (%d pixels)\n", i - 1, got->r, got->g, got->b, got->count);
+
+			vector_fixed<double, 3> v;
+			v(0) = got->r / 255.0;
+			v(1) = got->g / 255.0;
+			v(2) = got->b / 255.0;
+			palette.push_back(v);
 		}
-		fprintf(stderr,"avgR=%f avgG=%f avgB=%f\n", sumR/cnt, sumG/cnt, sumB/cnt);
+
+	} else if (strcmp(opt_palette, "random") == 0) {
+		/*
+		 * Random palette
+		 */
+
+		for (int i = 0; i < numColours; i++) {
+			vector_fixed<double, 3> v;
+			v(0) = ((double) rand()) / RAND_MAX;
+			v(1) = ((double) rand()) / RAND_MAX;
+			v(2) = ((double) rand()) / RAND_MAX;
+			palette.push_back(v);
+		}
+
+	} else {
+		/*
+		 * Load palette from file
+		 */
+		FILE *in = fopen(opt_palette, "r");
+		if (in == NULL) {
+			fprintf(stderr, "Could not open palette \"%s\"\n", opt_palette);
+			exit(1);
+		}
+
+		numColours = 0;
+
+		float r, g, b;
+		while (fscanf(in, "%f %f %f\n", &r, &g, &b) == 3) {
+			if (arg_paletteSize >= MAXPALETTE) {
+				fprintf(stderr, "too many colours in palette \"%s\"\n", opt_palette);
+				exit(1);
+			}
+
+			if (r > 1 || g > 1 || b > 1) {
+				// integer 0-255
+				r /= 255.0;
+				g /= 255.0;
+				b /= 255.0;
+			} else {
+				// float 0-1
+			}
+
+			vector_fixed<double, 3> v;
+			v(0) = r;
+			v(1) = g;
+			v(2) = b;
+			palette.push_back(v);
+
+			numColours++;
+		}
+
+		arg_paletteSize = numColours;
+		if (transparent >= 0) {
+			transparent = arg_paletteSize++;
+
+			fclose(in);
+		}
 	}
 
-	/*
-	 *
-	 */
-
-	for (int i = 0; i < arg_paletteSize; i++) {
+	// for transparency, add extra colour
+	if (transparent >= 0) {
 		vector_fixed<double, 3> v;
-		v(0) = ((double) rand()) / RAND_MAX;
-		v(1) = ((double) rand()) / RAND_MAX;
-		v(2) = ((double) rand()) / RAND_MAX;
+		v(0) = 126 / 255.0;
+		v(1) = 127 / 255.0;
+		v(2) = 128 / 255.0;
 		palette.push_back(v);
 	}
+	assert(palette.size() == arg_paletteSize);
 
-	for (int k = 0; k < 3; k++) {
-		filter1_weights(0, 0)(k) = 1.0;
-	}
+	array3d<double> *variables;
 
-	array3d<double> *coarse_variables;
-	double dithering_level = 0.09 * log((double) image.get_width() * image.get_height()) - 0.04 * log((double) palette.size()) + 0.001;
-	if (opt_stddev != 0) {
-		dithering_level = opt_stddev;
-		if (dithering_level <= 0.0) {
-			printf("Dithering level must be more than zero.\n");
-			return -1;
-		}
-	}
-
-	double stddev = dithering_level;
-	double sum = 0.0;
-	for (int i = 0; i < 3; i++) {
-		for (int j = 0; j < 3; j++) {
-			double w = exp(-sqrt((i - 1) * (i - 1) + (j - 1) * (j - 1)) / (stddev * stddev));
-			sum += w;
-			for (int k = 0; k < 3; k++)
-				filter3_weights(i, j)(k) = w;
-		}
-	}
-	for (int i = 0; i < 3; i++) {
-		for (int j = 0; j < 3; j++) {
-			for (int k = 0; k < 3; k++) {
-				filter3_weights(i, j)(k) /= sum;
-			}
-		}
-	}
-	if (opt_verbose) {
-		for (int i = 0; i < 3; i++) {
-			for (int j = 0; j < 3; j++) {
-				printf("%5.2f ", filter3_weights(i, j)(0) / filter3_weights(0, 0)(0));
-			}
-			printf("\n");
-		}
-		printf("\n");
-	}
-
-	sum = 0.0;
-	int coef5[] = { 1, 4, 6, 4, 1};
-	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 5; j++) {
-			double w =  exp(-sqrt((i - 2) * (i - 2) + (j - 2) * (j - 2)) / (stddev * stddev));
-			sum += w;
-			for (int k = 0; k < 3; k++)
-				filter5_weights(i, j)(k) = w;
-		}
-	}
-	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 5; j++) {
-			for (int k = 0; k < 3; k++) {
-				filter5_weights(i, j)(k) /= sum;
-			}
-		}
-	}
-
-	if (opt_verbose) {
-		for (int i = 0; i < 5; i++) {
-			for (int j = 0; j < 5; j++) {
-				printf("%5.2f ", filter5_weights(i, j)(0) / filter5_weights(0, 0)(0));
-			}
-			printf("\n");
-		}
-		printf("\n");
-	}
+	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,initialTemperature:%f,finalTemperature:%f,stddef=%f,palette=\"%s\"}\n",
+		arg_inputName,
+		width, height,
+		arg_paletteSize, transparent,
+		opt_seed, opt_filterSize,
+		opt_numLevels, opt_initialTemperature, opt_finalTemperature,
+		opt_stddev,
+		opt_palette ? opt_palette : ""
+	);
 
 	array2d<vector_fixed<double, 3> > *filters[] =
 		{NULL, &filter1_weights, NULL, &filter3_weights,
 		 NULL, &filter5_weights};
-	spatial_color_quant(image, *filters[opt_gridSize], quantized_image, palette, coarse_variables, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 1);
+	spatial_color_quant(image, *filters[opt_filterSize], quantized_image, palette, variables, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 1);
 
 	cout << endl;
 
 	if (arg_outputName) {
-		FILE *fil = fopen(arg_outputName, "wb");
+		FILE *fil = fopen(arg_outputName, "w");
 		if (fil == NULL) {
 			fprintf(stderr, "Could not open output file \"%s\"\n", arg_outputName);
-			return -1;
+			exit(1);
 		}
 
 		gdImagePtr im = gdImageCreate(width, height);
 
 		// pre-allocate palette
 		for (int i = 0; i < arg_paletteSize; i++) {
-			int ix = gdImageColorAllocate(im, palette[i](0)*255, palette[i](1)*255, palette[i](2)*255);
+			int ix = gdImageColorAllocate(im, palette[i](0) * 255, palette[i](1) * 255, palette[i](2) * 255);
 			assert(ix == i);
 		}
+		if (transparent >= 0)
+			gdImageColorTransparent(im, transparent);
 
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
-				int c = quantized_image(x, y);
-				gdImageSetPixel(im, x, y, c);
+				int yx = y * width + x;
+
+				if (!(pixelSet[yx >> 3] & (1 << (yx & 7)))) {
+					// disabled/transparent pixel
+					gdImageSetPixel(im, x, y, transparent);
+				} else {
+					// enabled pixel
+					int c = quantized_image(x, y);
+
+					gdImageSetPixel(im, x, y, c);
+				}
 			}
 		}
 
@@ -1286,26 +1398,53 @@ int main(int argc, char *argv[]) {
 		fclose(fil);
 	}
 
+	if (opt_opaque) {
+		FILE *fil = fopen(opt_opaque, "w");
+		if (fil == NULL) {
+			fprintf(stderr, "Could not open opaque file \"%s\"\n", opt_opaque);
+			exit(1);
+		}
+
+		gdImagePtr im = gdImageCreateTrueColor(width, height);
+
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				int yx = y * width + x;
+
+				if (!(pixelSet[yx >> 3] & (1 << (yx & 7)))) {
+					// disabled/transparent pixel
+
+					gdImageSetPixel(im, x, y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
+				} else {
+					// enabled pixel
+					int c = quantized_image(x, y);
+					int r, g, b;
+
+					r = round(palette[c](0) * 255);
+					g = round(palette[c](1) * 255);
+					b = round(palette[c](2) * 255);
+
+					gdImageSetPixel(im, x, y, gdImageColorAllocate(im, r, g, b));
+				}
+			}
+		}
+
+		gdImagePng(im, fil);
+		gdImageDestroy(im);
+		fclose(fil);
+	}
+
 	if (1) {
 		static int colourCount[256];
-		double sumR=0, sumG=0, sumB=0;
-		int cnt=0;
 
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
 				int i = quantized_image(x, y);
 				colourCount[i]++;
-
-				sumR += palette[i](0)*255;
-				sumG += palette[i](1)*255;
-				sumB += palette[i](2)*255;
-				cnt++;
 			}
 		}
-		for (int i = 0; i < arg_paletteSize; i++) {
-			fprintf(stderr, "%3d(%6d): %3d %3d %3d\n", i, colourCount[i], (int)(palette[i](0)*255), (int)(palette[i](1)*255), (int)(palette[i](2)*255));
-		}
-		fprintf(stderr,"avgR=%f avgG=%f avgB=%f\n", sumR/cnt, sumG/cnt, sumB/cnt);
+		for (int i = 0; i < arg_paletteSize; i++)
+			fprintf(stderr, "%3d(%6d): %3d %3d %3d\n", i, colourCount[i], (int) (palette[i](0) * 255), (int) (palette[i](1) * 255), (int) (palette[i](2) * 255));
 	}
 
 	return 0;
