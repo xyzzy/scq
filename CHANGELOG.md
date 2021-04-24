@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+```
+2021-04-24 23:20:52 Changed: Move allocation of `variables` to caller.
+```
+
 NOTE: By chance of coincidence the original code worked with the visit queue.
       The queue is reset after 10% expansion visiting all pixels, effectively greatly increasing repeatPerLevel.  
       This needs to be re-tunes.

@@ -376,16 +376,6 @@ ostream &operator<<(ostream &out, array3d<T> &a) {
 	return out;
 }
 
-void fill_random(array3d<double> &a) {
-	for (int i = 0; i < a.get_width(); i++) {
-		for (int j = 0; j < a.get_height(); j++) {
-			for (int k = 0; k < a.get_depth(); k++) {
-				a(i, j, k) = ((double) rand()) / RAND_MAX;
-			}
-		}
-	}
-}
-
 void random_permutation(int count, vector<int> &result) {
 	result.clear();
 	for (int i = 0; i < count; i++) {
@@ -484,11 +474,10 @@ vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	return result;
 }
 
-int best_match_color(array3d<double> &vars, int i_x, int i_y,
-		     vector<vector_fixed<double, 3> > &palette) {
+int best_match_color(array3d<double> &vars, int i_x, int i_y, int paletteSize) {
 	int max_v = 0;
 	double max_weight = vars(i_x, i_y, 0);
-	for (unsigned int v = 1; v < palette.size(); v++) {
+	for (unsigned int v = 1; v < paletteSize; v++) {
 		if (vars(i_x, i_y, v) > max_weight) {
 			max_v = v;
 			max_weight = vars(i_x, i_y, v);
@@ -622,21 +611,19 @@ void compute_initial_j_palette_sum(array2d<vector_fixed<double, 3> > &j_palette_
 	}
 }
 
-void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
+void spatial_color_quant(int width,
+			 int height,
+			 int paletteSize,
+			 array2d<vector_fixed<double, 3> > &image,
 			 array2d<vector_fixed<double, 3> > &filter_weights,
 			 array2d<int> &quantized_image,
 			 vector<vector_fixed<double, 3> > &palette,
-			 array3d<double> *&p_coarse_variables,
+			 array3d<double> &variables,
 			 double initial_temperature,
 			 double final_temperature,
 			 int numLevels,
 			 int repeats_per_temp,
 			 int verbose) {
-
-	p_coarse_variables = new array3d<double>(image.get_width(), image.get_height(), palette.size());
-	// For syntactic convenience
-	array3d<double> &coarse_variables = *p_coarse_variables;
-	fill_random(coarse_variables);
 
 	// Compute a_i, b_{ij} according to (11)
 	int extended_neighborhood_width = filter_weights.get_width() * 2 - 1;
@@ -645,7 +632,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					     extended_neighborhood_height);
 	compute_b_array(filter_weights, b0);
 
-	array2d<vector_fixed<double, 3> > a0(image.get_width(), image.get_height());
+	array2d<vector_fixed<double, 3> > a0(width, height);
 	compute_a_image(image, b0, a0);
 
 	// Multiscale annealing
@@ -653,10 +640,10 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	double temperature = initial_temperature;
 	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
-	array2d<vector_fixed<double, 3> > s(palette.size(), palette.size());
-	compute_initial_s(s, coarse_variables, b0);
-	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(coarse_variables.get_width(), coarse_variables.get_height());
-	compute_initial_j_palette_sum(*j_palette_sum, coarse_variables, palette);
+	array2d<vector_fixed<double, 3> > s(paletteSize, paletteSize);
+	compute_initial_s(s, variables, b0);
+	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(width, height);
+	compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
 
@@ -664,23 +651,21 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			fprintf(stderr, "level=%d temperature=%f\n", iLevel, temperature);
 
 		// Need to reseat this reference in case we changed p_coarse_variables
-		array3d<double> &coarse_variables = *p_coarse_variables;
 		vector_fixed<double, 3> middle_b = b_value(b0, 0, 0, 0, 0);
 
 		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
-		int step_counter = 0;
 		for (int repeat = 0; repeat < repeats_per_temp; repeat++) {
 			int pixels_changed = 0, pixels_visited = 0, something_changed = 0;
 			deque<pair<int, int> > visit_queue;
-			random_permutation_2d(coarse_variables.get_width(), coarse_variables.get_height(), visit_queue);
+			random_permutation_2d(width, height, visit_queue);
 
 			// Compute 2*sum(j in extended neighborhood of i, j != i) b_ij
 
 			while (!visit_queue.empty()) {
 				// If we get to 10% above initial size, just revisit them all
-				if ((int) visit_queue.size() > coarse_variables.get_width() * coarse_variables.get_height() * 11 / 10) {
+				if ((int) visit_queue.size() > width * height * 11 / 10) {
 					visit_queue.clear();
-					random_permutation_2d(coarse_variables.get_width(), coarse_variables.get_height(), visit_queue);
+					random_permutation_2d(width, height, visit_queue);
 				}
 
 				int i_x = visit_queue.front().first, i_y = visit_queue.front().second;
@@ -692,7 +677,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					for (int x = 0; x < b0.get_width(); x++) {
 						int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 						if (i_x == j_x && i_y == j_y) continue;
-						if (j_x < 0 || j_y < 0 || j_x >= coarse_variables.get_width() || j_y >= coarse_variables.get_height()) continue;
+						if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 						vector_fixed<double, 3> b_ij = b_value(b0, i_x, i_y, j_x, j_y);
 						vector_fixed<double, 3> j_pal = (*j_palette_sum)(j_x, j_y);
 						p_i(0) += b_ij(0) * j_pal(0);
@@ -706,7 +691,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 				vector<double> meanfield_logs, meanfields;
 				double max_meanfield_log = -numeric_limits<double>::infinity();
 				double meanfield_sum = 0.0;
-				for (unsigned int v = 0; v < palette.size(); v++) {
+				for (unsigned int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
@@ -715,7 +700,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					if (meanfield_logs.back() > max_meanfield_log)
 						max_meanfield_log = meanfield_logs.back();
 				}
-				for (unsigned int v = 0; v < palette.size(); v++) {
+				for (unsigned int v = 0; v < paletteSize; v++) {
 					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 100));
 					meanfield_sum += meanfields.back();
 				}
@@ -723,22 +708,22 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					cout << "Fatal error: Meanfield sum underflowed. Please contact developer." << endl;
 					exit(-1);
 				}
-				int old_max_v = best_match_color(coarse_variables, i_x, i_y, palette);
+				int old_max_v = best_match_color(variables, i_x, i_y, paletteSize);
 				vector_fixed<double, 3> &j_pal = (*j_palette_sum)(i_x, i_y);
-				for (unsigned int v = 0; v < palette.size(); v++) {
+				for (unsigned int v = 0; v < paletteSize; v++) {
 					double new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
 					if (new_val >= 1) new_val = 1 - 1e-10;
-					double delta_m_iv = new_val - coarse_variables(i_x, i_y, v);
-					coarse_variables(i_x, i_y, v) = new_val;
+					double delta_m_iv = new_val - variables(i_x, i_y, v);
+					variables(i_x, i_y, v) = new_val;
 					j_pal(0) += delta_m_iv * palette[v](0);
 					j_pal(1) += delta_m_iv * palette[v](1);
 					j_pal(2) += delta_m_iv * palette[v](2);
 					if (fabs(delta_m_iv) > 0.001)
-						update_s(s, coarse_variables, b0, i_x, i_y, v, delta_m_iv);
+						update_s(s, variables, b0, i_x, i_y, v, delta_m_iv);
 				}
-				int max_v = best_match_color(coarse_variables, i_x, i_y, palette);
+				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
 				// Only consider it a change if the colors are different enough
 				if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0)) {
 					pixels_changed++;
@@ -754,7 +739,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					for (int y = min(1, center_y - 1); y < max(b0.get_height() - 1, center_y + 1); y++) {
 						for (int x = min(1, center_x - 1); x < max(b0.get_width() - 1, center_x + 1); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
-							if (j_x < 0 || j_y < 0 || j_x >= coarse_variables.get_width() || j_y >= coarse_variables.get_height()) continue;
+							if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 							visit_queue.push_back(pair<int, int>(j_x, j_y));
 						}
 					}
@@ -764,21 +749,18 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			if (verbose == 1)
 				fprintf(stderr, "level=%d temperature=%f changed=%d\n", iLevel, temperature, something_changed);
 
-			refine_palette(s, coarse_variables, a0, palette);
-			compute_initial_j_palette_sum(*j_palette_sum, coarse_variables, palette);
+			refine_palette(s, variables, a0, palette);
+			compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 		}
 	}
 
 	{
-		// Need to reseat this reference in case we changed p_coarse_variables
-		array3d<double> &coarse_variables = *p_coarse_variables;
-
-		for (int i_x = 0; i_x < image.get_width(); i_x++) {
-			for (int i_y = 0; i_y < image.get_height(); i_y++) {
-				quantized_image(i_x, i_y) = best_match_color(coarse_variables, i_x, i_y, palette);
+		for (int i_x = 0; i_x < width; i_x++) {
+			for (int i_y = 0; i_y < height; i_y++) {
+				quantized_image(i_x, i_y) = best_match_color(variables, i_x, i_y, paletteSize);
 			}
 		}
-		for (unsigned int v = 0; v < palette.size(); v++) {
+		for (unsigned int v = 0; v < paletteSize; v++) {
 			for (unsigned int k = 0; k < 3; k++) {
 				if (palette[v](k) > 1.0) palette[v](k) = 1.0;
 				if (palette[v](k) < 0.0) palette[v](k) = 0.0;
@@ -1176,7 +1158,15 @@ int main(int argc, char *argv[]) {
 	}
 	assert(palette.size() == arg_paletteSize);
 
-	array3d<double> *variables;
+	array3d<double> variables(width, height, arg_paletteSize);
+
+	// with octree, no need to randomize variables
+	for (int i = 0; i < width; i++) {
+		for (int j = 0; j < height; j++) {
+			for (int k = 0; k < arg_paletteSize; k++)
+				variables(i, j, k) = 1.0 / arg_paletteSize;
+		}
+	}
 
 	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,initialTemperature:%f,finalTemperature:%f,stddef=%f,palette=\"%s\"}\n",
 		arg_inputName,
@@ -1191,7 +1181,8 @@ int main(int argc, char *argv[]) {
 	array2d<vector_fixed<double, 3> > *filters[] =
 		{NULL, &filter1_weights, NULL, &filter3_weights,
 		 NULL, &filter5_weights};
-	spatial_color_quant(image, *filters[opt_filterSize], quantized_image, palette, variables, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 3, opt_verbose);
+	spatial_color_quant(width, height, arg_paletteSize,
+		image, *filters[opt_filterSize], quantized_image, palette, variables, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 4, opt_verbose);
 
 	if (arg_outputName) {
 		FILE *fil = fopen(arg_outputName, "w");
