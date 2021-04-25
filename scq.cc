@@ -554,7 +554,6 @@ void spatial_color_quant(int width,
 			 int paletteSize,
 			 array2d<vector_fixed<double, 3> > &image,
 			 array2d<double> &weights,
-			 array2d<int> &quantized_image,
 			 vector<vector_fixed<double, 3> > &palette,
 			 array3d<double> &variables,
 			 const uint8_t *enabledPixels,
@@ -648,11 +647,8 @@ void spatial_color_quant(int width,
 						int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 						if (i_x == j_x && i_y == j_y) continue;
 						if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
-						double b_ij = b_value(weights, i_x, i_y, j_x, j_y);
-						vector_fixed<double, 3> j_pal = (*j_palette_sum)(j_x, j_y);
-						p_i(0) += b_ij * j_pal(0);
-						p_i(1) += b_ij * j_pal(1);
-						p_i(2) += b_ij * j_pal(2);
+
+						p_i += b_value(weights, i_x, i_y, j_x, j_y) * (*j_palette_sum)(j_x, j_y);
 					}
 				}
 				p_i *= 2.0;
@@ -685,11 +681,11 @@ void spatial_color_quant(int width,
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
 					if (new_val >= 1) new_val = 1 - 1e-10;
+
 					double delta_m_iv = new_val - variables(i_x, i_y, v);
+					j_pal += delta_m_iv * palette[v];
+
 					variables(i_x, i_y, v) = new_val;
-					j_pal(0) += delta_m_iv * palette[v](0);
-					j_pal(1) += delta_m_iv * palette[v](1);
-					j_pal(2) += delta_m_iv * palette[v](2);
 				}
 				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
 
@@ -740,20 +736,6 @@ void spatial_color_quant(int width,
 			compute_initial_s(s, variables, weights);
 			refine_palette(s, variables, a0, palette);
 			compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
-		}
-	}
-
-	{
-		for (int i_x = 0; i_x < width; i_x++) {
-			for (int i_y = 0; i_y < height; i_y++) {
-				quantized_image(i_x, i_y) = best_match_color(variables, i_x, i_y, paletteSize);
-			}
-		}
-		for (unsigned int v = 0; v < paletteSize; v++) {
-			for (unsigned int k = 0; k < 3; k++) {
-				if (palette[v](k) > 1.0) palette[v](k) = 1.0;
-				if (palette[v](k) < 0.0) palette[v](k) = 0.0;
-			}
 		}
 	}
 }
@@ -992,7 +974,6 @@ int main(int argc, char *argv[]) {
 
 	// allocate structures
 	array2d<vector_fixed<double, 3> > image(width, height);
-	array2d<int> quantized_image(width, height);
 	vector<vector_fixed<double, 3> > palette;
 	uint8_t enabledPixels[((width * height) >> 3) + 1];
 	memset(enabledPixels, 0, ((width * height) >> 3) + 1);
@@ -1158,7 +1139,7 @@ int main(int argc, char *argv[]) {
 	);
 
 	array2d<double> *filters[] = {NULL, &filter1_weights, NULL, &filter3_weights, NULL, &filter5_weights};
-	spatial_color_quant(width, height, arg_paletteSize, image, *filters[opt_filterSize], quantized_image, palette, variables, enabledPixels, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 1, opt_verbose);
+	spatial_color_quant(width, height, arg_paletteSize, image, *filters[opt_filterSize], palette, variables, enabledPixels, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 1, opt_verbose);
 
 	if (arg_outputName) {
 		FILE *fil = fopen(arg_outputName, "w");
@@ -1186,7 +1167,7 @@ int main(int argc, char *argv[]) {
 					gdImageSetPixel(im, x, y, transparent);
 				} else {
 					// enabled pixel
-					int c = quantized_image(x, y);
+					int c = best_match_color(variables, x, y, arg_paletteSize);
 
 					gdImageSetPixel(im, x, y, c);
 				}
@@ -1217,7 +1198,7 @@ int main(int argc, char *argv[]) {
 					gdImageSetPixel(im, x, y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
 				} else {
 					// enabled pixel
-					int c = quantized_image(x, y);
+					int c = best_match_color(variables, x, y, arg_paletteSize);
 					int r, g, b;
 
 					r = round(palette[c](0) * 255);
@@ -1239,7 +1220,7 @@ int main(int argc, char *argv[]) {
 
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
-				int i = quantized_image(x, y);
+				int i = best_match_color(variables, x, y, arg_paletteSize);
 				colourCount[i]++;
 			}
 		}

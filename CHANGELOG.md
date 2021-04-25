@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+```
+2021-04-25 01:23:35 Changed: Moved final image extraction to caller.
+```
+
 NOTE: Pixel detection change: `if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0))`
       Is replaced with: `if (max_v != old_max_v)` because this indicates an actual change in palette index.
 
