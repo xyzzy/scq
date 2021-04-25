@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 ```
-2021-04-25 18:59:48 Fixed: shortcut to set identity matrix triggers a compiler bug. 
+2021-04-25 19:36:31 Changed: Default `verbose=1`.
+2021-04-25 18:59:48 Fixed: Shortcut to set identity matrix triggers a compiler bug. 
 2021-04-25 17:09:15 Changed: Output image as cache to better detect pixel changes.
 2021-04-25 13:43:52 Changed: Constant folding in `refine_palette()`.
 2021-04-25 12:36:07 Changed: Made `p_i` more clearer.

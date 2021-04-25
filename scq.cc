@@ -768,13 +768,13 @@ int arg_paletteSize;
 const char *arg_outputName;
 const char *opt_palette = NULL;
 const char *opt_opaque = NULL;
-float opt_stddev = 1.0;
+float opt_stddev = 0.96;
 int opt_filterSize = 3;
-float opt_initialTemperature = 1;
-float opt_finalTemperature = 1e-29;
+double opt_initialTemperature = 1;
+double opt_finalTemperature = 1e-29;
 int opt_numLevels = 30;
 int opt_repeatsPerLevel = 1;
-int opt_verbose = 0;
+int opt_verbose = 1;
 int opt_seed = 0;
 
 void usage(const char *argv0, bool verbose) {
@@ -782,16 +782,17 @@ void usage(const char *argv0, bool verbose) {
 
 	if (verbose) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "\t-h --help                   This list\n");
-		fprintf(stderr, "\t-v --verbose                Say more\n");
 		fprintf(stderr, "\t-d --stddev=n               std deviation grid [default=%f]\n", opt_stddev);
-		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%f]\n", opt_initialTemperature);
-		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%f]\n", opt_finalTemperature);
-		fprintf(stderr, "\t-l --levels=n               Number of levels [default=%d]\n", opt_numLevels);
-		fprintf(stderr, "\t-r --repeats=n              Number of repeats per level [default=%d]\n", opt_numLevels);
 		fprintf(stderr, "\t-f --filter=n               Filter 1=1x1, 3=3x3, 5=5x5 [default=%d]\n", opt_filterSize);
-		fprintf(stderr, "\t-p --palette=file           Fixed palette [default=%s]\n", opt_palette ? opt_palette : "");
+		fprintf(stderr, "\t-h --help                   This list\n");
+		fprintf(stderr, "\t-l --levels=n               Number of levels [default=%d]\n", opt_numLevels);
 		fprintf(stderr, "\t-o --opaque=file            Additional opaque oytput [default=%s]\n", opt_opaque ? opt_opaque : "");
+		fprintf(stderr, "\t-p --palette=file           Fixed palette [default=%s]\n", opt_palette ? opt_palette : "");
+		fprintf(stderr, "\t-q --quiet                  Say less\n");
+		fprintf(stderr, "\t-r --repeats=n              Number of repeats per level [default=%d]\n", opt_numLevels);
+		fprintf(stderr, "\t-v --verbose                Say more\n");
+		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%f]\n", opt_finalTemperature);
+		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%f]\n", opt_initialTemperature);
 	}
 }
 
@@ -800,20 +801,21 @@ int main(int argc, char *argv[]) {
 		int option_index = 0;
 		enum {
 			LO_INITIALTEMP = 1, LO_FINALTEMP,
-			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_REPEATS = 'r', LO_PALETTE = 'p', LO_OPAQUE = 'o'
+			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_REPEATS = 'r', LO_PALETTE = 'p', LO_OPAQUE = 'o', LO_QUIET = 'q'
 		};
 		static struct option long_options[] = {
 			/* name, has_arg, flag, val */
-			{"stddev",              1, 0, LO_STDDEV},
-			{"final-temperature",   1, 0, LO_FINALTEMP},
 			{"filter",              1, 0, LO_FILTER},
+			{"final-temperature",   1, 0, LO_FINALTEMP},
 			{"help",                0, 0, LO_HELP},
 			{"initial-temperature", 1, 0, LO_INITIALTEMP},
 			{"levels",              1, 0, LO_LEVELS},
-			{"repeats",             1, 0, LO_REPEATS},
-			{"palette",             1, 0, LO_PALETTE},
 			{"opaque",              1, 0, LO_OPAQUE},
+			{"palette",             1, 0, LO_PALETTE},
+			{"quiet",               0, 0, LO_QUIET},
+			{"repeats",             1, 0, LO_REPEATS},
 			{"seed",                1, 0, LO_SEED},
+			{"stddev",              1, 0, LO_STDDEV},
 			{"verbose",             0, 0, LO_VERBOSE},
 			{NULL,                  0, 0, 0}
 		};
@@ -872,6 +874,9 @@ int main(int argc, char *argv[]) {
 
 			case LO_VERBOSE:
 				opt_verbose++;
+				break;
+			case LO_QUIET:
+				opt_verbose--;
 				break;
 			case LO_HELP:
 				usage(argv[0], 0);
