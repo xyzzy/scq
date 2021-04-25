@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+NOTE: Pixel detection change: `if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0))`
+      Is replaced with: `if (max_v != old_max_v)` because this indicates an actual change in palette index.
+
 ```
+2021-04-25 01:13:50 Changed: Simplify pixel change detection.
 2021-04-25 01:03:56 Changed: `s` is only used for palette updates, relocated everything there. 
 2021-04-25 01:02:31 Changed: Replaced `weights` and `s` with single-double.
 ```

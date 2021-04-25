@@ -694,7 +694,7 @@ void spatial_color_quant(int width,
 				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
 
 				// Only consider it a change if the colors are different enough
-				if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0)) {
+				if (max_v != old_max_v) {
 					pixels_changed++;
 					something_changed++;
 
