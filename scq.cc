@@ -398,22 +398,13 @@ double b_value(array2d<double> &b,
 		return 0.0;
 }
 
-template<typename T, int length>
-vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
-	vector<T> result;
-	for (unsigned int i = 0; i < s.size(); i++) {
-		result.push_back(s[i](k));
-	}
-	return result;
-}
-
-int best_match_color(array3d<double> &vars, int i_x, int i_y, int paletteSize) {
+int best_match_color(array3d<double> &variables, int i_x, int i_y, int paletteSize) {
 	int max_v = 0;
-	double max_weight = vars(i_x, i_y, 0);
-	for (unsigned int v = 1; v < paletteSize; v++) {
-		if (vars(i_x, i_y, v) > max_weight) {
+	double max_weight = variables(i_x, i_y, 0);
+	for (int v = 1; v < paletteSize; v++) {
+		if (variables(i_x, i_y, v) > max_weight) {
 			max_v = v;
-			max_weight = vars(i_x, i_y, v);
+			max_weight = variables(i_x, i_y, v);
 		}
 	}
 	return max_v;
@@ -478,13 +469,15 @@ void refine_palette(array2d<double> &s,
 	array2d<double> sInv =  s.matrix_inverse();
 
 	for (unsigned int k = 0; k < 3; k++) {
-		vector<double> R_k = extract_vector_layer_1d(r, k);
-		vector<double> palette_channel = sInv * R_k;
-		for (unsigned int v = 0; v < paletteSize; v++) {
-			double val = palette_channel[v];
-			if (val < 0) val = 0;
-			if (val > 1) val = 1;
-			palette[v](k) = val;
+		// sInv * R_k
+		for (int v = 0; v < paletteSize; v++) {
+			double sum = 0;
+			for (int col = 0; col < paletteSize; col++)
+				sum += sInv(col, v) * r[col](k);
+
+			if (sum < 0) sum = 0;
+			if (sum > 1) sum = 1;
+			palette[v](k) = sum;
 		}
 	}
 }
