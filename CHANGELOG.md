@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
+
+## 2021-04-25 20:08:40 Version 0.1.0
 
 ```
 2021-04-25 19:36:31 Changed: Default `verbose=1`.
@@ -63,3 +65,5 @@ NOTE:
 2021-04-05 03:14:49 Added: `moonwalk` theme.
 2021-24-01 11:28:59 Historic commit.
 ```
+
+[Unreleased]: https://github.com/xyzzy/scq/compare/v0.1.0...HEAD
