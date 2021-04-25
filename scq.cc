@@ -497,34 +497,6 @@ void compute_initial_s(array2d<double> &s,
 	}
 }
 
-void update_s(array2d<double> &s,
-	      array3d<double> &variables,
-	      array2d<double> &weights,
-	      int j_x, int j_y, int alpha,
-	      double delta) {
-	int palette_size = s.get_width();
-	int coarse_width = variables.get_width();
-	int coarse_height = variables.get_height();
-	int center_x = (weights.get_width() - 1) / 2, center_y = (weights.get_height() - 1) / 2;
-	int max_i_x = min(coarse_width, j_x + center_x + 1);
-	int max_i_y = min(coarse_height, j_y + center_y + 1);
-	for (int i_y = max(0, j_y - center_y); i_y < max_i_y; i_y++) {
-		for (int i_x = max(0, j_x - center_x); i_x < max_i_x; i_x++) {
-			double delta_b_ij = delta * b_value(weights, i_x, i_y, j_x, j_y);
-			if (i_x == j_x && i_y == j_y) continue;
-			for (int v = 0; v <= alpha; v++) {
-				double mult = variables(i_x, i_y, v);
-				s(v, alpha) += mult * delta_b_ij;
-			}
-			for (int v = alpha; v < palette_size; v++) {
-				double mult = variables(i_x, i_y, v);
-				s(alpha, v) += mult * delta_b_ij;
-			}
-		}
-	}
-	s(alpha, alpha) += delta * b_value(weights, 0, 0, 0, 0);
-}
-
 void refine_palette(array2d<double> &s,
 		    array3d<double> &variables,
 		    array2d<vector_fixed<double, 3> > &a,
@@ -601,8 +573,6 @@ void spatial_color_quant(int width,
 	double temperature = initial_temperature;
 	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
-	array2d<double> s(paletteSize, paletteSize);
-	compute_initial_s(s, variables, weights);
 	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(width, height);
 	compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 
@@ -720,8 +690,6 @@ void spatial_color_quant(int width,
 					j_pal(0) += delta_m_iv * palette[v](0);
 					j_pal(1) += delta_m_iv * palette[v](1);
 					j_pal(2) += delta_m_iv * palette[v](2);
-					if (fabs(delta_m_iv) > 0.001)
-						update_s(s, variables, weights, i_x, i_y, v, delta_m_iv);
 				}
 				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
 
@@ -768,6 +736,8 @@ void spatial_color_quant(int width,
 			if (verbose == 1)
 				fprintf(stderr, "level=%d temperature=%f changed=%d\n", iLevel, temperature, something_changed);
 
+			array2d<double> s(paletteSize, paletteSize);
+			compute_initial_s(s, variables, weights);
 			refine_palette(s, variables, a0, palette);
 			compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 		}

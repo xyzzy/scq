@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 ```
+2021-04-25 01:03:56 Changed: `s` is only used for palette updates, relocated everything there. 
 2021-04-25 01:02:31 Changed: Replaced `weights` and `s` with single-double.
 ```
 
