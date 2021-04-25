@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+NOTE: Apparently it is more effective to jump directly to the final temperature and loop until stable.  
+      Possible because of initial octree approximation.
+
 ```
+2021-04-24 23:40:58 Changed: Redesigned visit queue.
 2021-04-24 23:20:52 Changed: Move allocation of `variables` to caller.
 ```
 

@@ -83,8 +83,6 @@ public:
 		return data[i];
 	}
 
-	int get_length() { return length; }
-
 	T norm_squared() {
 		T result = 0;
 		for (int i = 0; i < length; i++) {
@@ -384,16 +382,6 @@ void random_permutation(int count, vector<int> &result) {
 	random_shuffle(result.begin(), result.end());
 }
 
-void random_permutation_2d(int width, int height, deque<pair<int, int> > &result) {
-	vector<int> perm1d;
-	random_permutation(width * height, perm1d);
-	while (!perm1d.empty()) {
-		int idx = perm1d.back();
-		perm1d.pop_back();
-		result.push_back(pair<int, int>(idx % width, idx / width));
-	}
-}
-
 void compute_b_array(array2d<vector_fixed<double, 3> > &filter_weights,
 		     array2d<vector_fixed<double, 3> > &b) {
 	// Assume that the pixel i is always located at the center of b,
@@ -619,11 +607,14 @@ void spatial_color_quant(int width,
 			 array2d<int> &quantized_image,
 			 vector<vector_fixed<double, 3> > &palette,
 			 array3d<double> &variables,
+			 const uint8_t *enabledPixels,
 			 double initial_temperature,
 			 double final_temperature,
 			 int numLevels,
-			 int repeats_per_temp,
+			 int repeatsPerLevel,
 			 int verbose) {
+
+	const int size2d = width * height;
 
 	// Compute a_i, b_{ij} according to (11)
 	int extended_neighborhood_width = filter_weights.get_width() * 2 - 1;
@@ -645,6 +636,13 @@ void spatial_color_quant(int width,
 	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(width, height);
 	compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 
+	char dirty_flag[size2d];
+	int dirty_xy[size2d];
+	int dirty_in = 0;
+	int dirty_out = 0;
+	int dirty_cnt = 0;
+	int dirty_tick = 0;
+
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
 
 		if (verbose == 2)
@@ -654,22 +652,54 @@ void spatial_color_quant(int width,
 		vector_fixed<double, 3> middle_b = b_value(b0, 0, 0, 0, 0);
 
 		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
-		for (int repeat = 0; repeat < repeats_per_temp; repeat++) {
+		for (int iRepeat = 0; iRepeat < repeatsPerLevel; iRepeat++) {
 			int pixels_changed = 0, pixels_visited = 0, something_changed = 0;
-			deque<pair<int, int> > visit_queue;
-			random_permutation_2d(width, height, visit_queue);
+
+			// put enabled pixels in queue
+			dirty_cnt = 0;
+			for (int y = 0; y < height; y++) {
+				for (int x = 0; x < width; x++) {
+					int yx = y * width + x;
+
+					if (enabledPixels[yx >> 3] & (1 << (yx & 7))) {
+						dirty_flag[y * width + x] = 0;
+						dirty_xy[dirty_cnt++] = yx;
+					}
+				}
+			}
+			dirty_out = 0;
+			dirty_in = dirty_cnt % size2d; // next position to add to queue
+			dirty_tick = dirty_cnt; // when to generate next log message
+
+			// randomize
+			for (int i = 1; i < dirty_cnt; i++) {
+				int j = rand() % (i + 1);
+
+				int swap = dirty_xy[i];
+				dirty_xy[i] = dirty_xy[j];
+				dirty_xy[j] = swap;
+			}
 
 			// Compute 2*sum(j in extended neighborhood of i, j != i) b_ij
 
-			while (!visit_queue.empty()) {
-				// If we get to 10% above initial size, just revisit them all
-				if ((int) visit_queue.size() > width * height * 11 / 10) {
-					visit_queue.clear();
-					random_permutation_2d(width, height, visit_queue);
-				}
+			int maxLoop = 100; // in case when stuck in local minimum
+			while (dirty_cnt) {
+				/*
+				 * Get next location to visit
+				 */
+				const int i_x = dirty_xy[dirty_out] % width;
+				const int i_y = dirty_xy[dirty_out] / width;
+				const int yx = i_y * width + i_x;
+				dirty_out = (dirty_out + 1) % size2d;
+				dirty_cnt--;
 
-				int i_x = visit_queue.front().first, i_y = visit_queue.front().second;
-				visit_queue.pop_front();
+				// test if pixel was enabled
+				if (!(enabledPixels[yx >> 3] & (1 << (yx & 7))))
+					continue;
+
+				// mark pixel as processed
+				dirty_flag[i_y * width + i_x] = 0;
+				pixels_visited++;
 
 				// Compute (25)
 				vector_fixed<double, 3> p_i;
@@ -724,6 +754,7 @@ void spatial_color_quant(int width,
 						update_s(s, variables, b0, i_x, i_y, v, delta_m_iv);
 				}
 				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
+
 				// Only consider it a change if the colors are different enough
 				if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0)) {
 					pixels_changed++;
@@ -740,12 +771,30 @@ void spatial_color_quant(int width,
 						for (int x = min(1, center_x - 1); x < max(b0.get_width() - 1, center_x + 1); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 							if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
-							visit_queue.push_back(pair<int, int>(j_x, j_y));
+
+							// revisit pixel
+							if (!dirty_flag[j_y * width + j_x]) {
+								dirty_flag[j_y * width + j_x] = 1;
+								dirty_cnt++;
+								dirty_xy[dirty_in] = j_y * width + j_x;
+								dirty_in = (dirty_in + 1) % size2d;
+							}
 						}
 					}
 				}
-				pixels_visited++;
+
+				if (--dirty_tick <= 0) {
+					if (verbose == 2)
+						fprintf(stderr, "pixels visited:%7d changed:%7d\n", pixels_visited, pixels_changed);
+					dirty_tick = dirty_cnt;
+					pixels_visited = pixels_changed = 0;
+					if (--maxLoop < 0)
+						break;
+				}
 			}
+
+			if (!something_changed)
+				break;
 			if (verbose == 1)
 				fprintf(stderr, "level=%d temperature=%f changed=%d\n", iLevel, temperature, something_changed);
 
@@ -778,9 +827,9 @@ const char *opt_palette = NULL;
 const char *opt_opaque = NULL;
 float opt_stddev = 1.0;
 int opt_filterSize = 3;
-float opt_initialTemperature = 1;
-float opt_finalTemperature = 0.001;
-int opt_numLevels = 3;
+float opt_initialTemperature = 0.00001;
+float opt_finalTemperature = 0.00001;
+int opt_numLevels = 32;
 int opt_verbose = 0;
 int opt_seed = 0;
 
@@ -1015,8 +1064,8 @@ int main(int argc, char *argv[]) {
 	array2d<vector_fixed<double, 3> > image(width, height);
 	array2d<int> quantized_image(width, height);
 	vector<vector_fixed<double, 3> > palette;
-	uint8_t pixelSet[((width * height) >> 3) + 1];
-	memset(pixelSet, 0, ((width * height) >> 3) + 1);
+	uint8_t enabledPixels[((width * height) >> 3) + 1];
+	memset(enabledPixels, 0, ((width * height) >> 3) + 1);
 
 	int numColours = arg_paletteSize;
 	int transparent = -1;
@@ -1055,7 +1104,7 @@ int main(int argc, char *argv[]) {
 				heapAdd(&nodeHeap, nodeInsert(r, g, b));
 
 				// enable pixel
-				pixelSet[yx >> 3] |= 1 << (yx & 7);
+				enabledPixels[yx >> 3] |= 1 << (yx & 7);
 			}
 		}
 	}
@@ -1181,8 +1230,7 @@ int main(int argc, char *argv[]) {
 	array2d<vector_fixed<double, 3> > *filters[] =
 		{NULL, &filter1_weights, NULL, &filter3_weights,
 		 NULL, &filter5_weights};
-	spatial_color_quant(width, height, arg_paletteSize,
-		image, *filters[opt_filterSize], quantized_image, palette, variables, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 4, opt_verbose);
+	spatial_color_quant(width, height, arg_paletteSize, image, *filters[opt_filterSize], quantized_image, palette, variables, enabledPixels, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 1, opt_verbose);
 
 	if (arg_outputName) {
 		FILE *fil = fopen(arg_outputName, "w");
@@ -1205,7 +1253,7 @@ int main(int argc, char *argv[]) {
 			for (int x = 0; x < width; x++) {
 				int yx = y * width + x;
 
-				if (!(pixelSet[yx >> 3] & (1 << (yx & 7)))) {
+				if (!(enabledPixels[yx >> 3] & (1 << (yx & 7)))) {
 					// disabled/transparent pixel
 					gdImageSetPixel(im, x, y, transparent);
 				} else {
@@ -1235,7 +1283,7 @@ int main(int argc, char *argv[]) {
 			for (int x = 0; x < width; x++) {
 				int yx = y * width + x;
 
-				if (!(pixelSet[yx >> 3] & (1 << (yx & 7)))) {
+				if (!(enabledPixels[yx >> 3] & (1 << (yx & 7)))) {
 					// disabled/transparent pixel
 
 					gdImageSetPixel(im, x, y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
