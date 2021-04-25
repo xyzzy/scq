@@ -458,7 +458,7 @@ void refine_palette(array2d<double> &s,
 	}
 
 	vector<vector_fixed<double, 3> > r(paletteSize);
-	for (unsigned int v = 0; v < paletteSize; v++) {
+	for (int v = 0; v < paletteSize; v++) {
 		for (int i_y = 0; i_y < variables.get_height(); i_y++) {
 			for (int i_x = 0; i_x < variables.get_width(); i_x++) {
 				r[v] += variables(i_x, i_y, v) * image(i_x, i_y);
@@ -468,7 +468,7 @@ void refine_palette(array2d<double> &s,
 
 	array2d<double> sInv =  s.matrix_inverse();
 
-	for (unsigned int k = 0; k < 3; k++) {
+	for (int k = 0; k < 3; k++) {
 		// sInv * R_k
 		for (int v = 0; v < paletteSize; v++) {
 			double sum = 0;
@@ -486,6 +486,7 @@ void spatial_color_quant(int width,
 			 int height,
 			 int paletteSize,
 			 array2d<vector_fixed<double, 3> > &image,
+			 array2d<int> &quantized_image,
 			 array2d<double> &weights,
 			 vector<vector_fixed<double, 3> > &palette,
 			 array3d<double> &variables,
@@ -497,6 +498,13 @@ void spatial_color_quant(int width,
 			 int verbose) {
 
 	const int size2d = width * height;
+
+	// invalidate output
+	for (int i_y = 0; i_y < height; i_y++) {
+		for (int i_x = 0; i_x < width; i_x++) {
+			quantized_image(i_x, i_y) = -1;
+		}
+	}
 
 	// Multiscale annealing
 	double temperature = initial_temperature;
@@ -524,7 +532,7 @@ void spatial_color_quant(int width,
 		for (int j_y = 0; j_y < variables.get_height(); j_y++) {
 			for (int j_x = 0; j_x < variables.get_width(); j_x++) {
 				vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
-				for (unsigned int alpha = 0; alpha < paletteSize; alpha++)
+				for (int alpha = 0; alpha < paletteSize; alpha++)
 					palette_sum += variables(j_x, j_y, alpha) * palette[alpha];
 				j_palette_sum(j_x, j_y) = palette_sum;
 			}
@@ -579,10 +587,6 @@ void spatial_color_quant(int width,
 				if (!(enabledPixels[yx >> 3] & (1 << (yx & 7))))
 					continue;
 
-				// mark pixel as processed
-				dirty_flag[i_y * width + i_x] = 0;
-				pixels_visited++;
-
 				// Compute (25)
 				vector_fixed<double, 3> p_i;
 				for (int y = 0; y < weights.get_height(); y++) {
@@ -601,7 +605,7 @@ void spatial_color_quant(int width,
 				// NOTE: my monkey brain does not understand why times minus-two
 
 				double max_meanfield_log = -numeric_limits<double>::infinity();
-				for (unsigned int v = 0; v < paletteSize; v++) {
+				for (int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
@@ -614,7 +618,7 @@ void spatial_color_quant(int width,
 				}
 
 				double meanfield_sum = 0.0;
-				for (unsigned int v = 0; v < paletteSize; v++) {
+				for (int v = 0; v < paletteSize; v++) {
 					double m = exp(meanfield_logs[v] - max_meanfield_log + 100);
 
 					meanfields[v] = m;
@@ -625,9 +629,11 @@ void spatial_color_quant(int width,
 					exit(-1);
 				}
 
-				int old_max_v = best_match_color(variables, i_x, i_y, paletteSize);
+				// update variables and determine new palette index for pixel
+				int max_v = 0;
+				double max_weight = -1;
 				vector_fixed<double, 3> &j_pal = j_palette_sum(i_x, i_y);
-				for (unsigned int v = 0; v < paletteSize; v++) {
+				for (int v = 0; v < paletteSize; v++) {
 					double new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
@@ -637,14 +643,21 @@ void spatial_color_quant(int width,
 					j_pal += delta_m_iv * palette[v];
 
 					variables(i_x, i_y, v) = new_val;
-				}
-				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
 
-				// Only consider it a change if the colors are different enough
-				if (max_v != old_max_v) {
+					// keep track of new max_weight
+					if (new_val > max_weight) {
+						max_v = v;
+						max_weight = new_val;
+					}
+				}
+
+				// did color change?
+				if (max_v != quantized_image(i_x, i_y)) {
 					pixels_changed++;
 					repeatChanged++;
 					levelChanged++;
+
+					quantized_image(i_x, i_y) = max_v;
 
 					// We don't add the outer layer of pixels , because
 					// there isn't much weight there, and if it does need
@@ -667,6 +680,10 @@ void spatial_color_quant(int width,
 					}
 				}
 
+				// mark pixel as processed
+				dirty_flag[i_y * width + i_x] = 0;
+				pixels_visited++;
+
 				if (--dirty_tick <= 0) {
 					if (verbose == 2)
 						fprintf(stderr, "pixels visited:%7d changed:%7d\n", pixels_visited, pixels_changed);
@@ -681,6 +698,56 @@ void spatial_color_quant(int width,
 				fprintf(stderr, "level=%d temperature=%g changed=%d\n", iLevel, temperature, repeatChanged);
 			if (!repeatChanged)
 				break;
+
+#if 0
+			{
+				char *fname;
+				asprintf(&fname, "test/%d.png", iLevel);
+
+				FILE *fil = fopen(fname, "w");
+				if (fil == NULL) {
+					fprintf(stderr, "Could not open opaque file \"%s\"\n", fname);
+					exit(1);
+				}
+
+
+				gdImagePtr im = gdImageCreateTrueColor(width, height);
+
+				for (int i_y = 0; i_y < height; i_y++) {
+					for (int i_x = 0; i_x < width; i_x++) {
+						int yx = i_y * width + i_x;
+
+						if (!(enabledPixels[yx >> 3] & (1 << (yx & 7)))) {
+							// disabled/transparent pixel
+
+							gdImageSetPixel(im, i_x, i_y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
+						} else {
+							// Compute (25)
+							vector_fixed<double, 3> p_i;
+							for (int y = 0; y < weights.get_height(); y++) {
+								for (int x = 0; x < weights.get_width(); x++) {
+									int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
+									if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
+
+									p_i += b_value(weights, i_x, i_y, j_x, j_y) * j_palette_sum(j_x, j_y);
+								}
+							}
+
+							int r = round(p_i(0) * 255);
+							int g = round(p_i(1) * 255);
+							int b = round(p_i(2) * 255);
+
+							gdImageSetPixel(im, i_x, i_y, gdImageColorAllocate(im, r, g, b));
+						}
+					}
+				}
+
+				gdImagePng(im, fil);
+				gdImageDestroy(im);
+				fclose(fil);
+				free(fname);
+			}
+#endif
 		}
 
 		array2d<double> s(paletteSize, paletteSize);
@@ -701,9 +768,10 @@ const char *opt_palette = NULL;
 const char *opt_opaque = NULL;
 float opt_stddev = 1.0;
 int opt_filterSize = 3;
-float opt_initialTemperature = 0.00001;
-float opt_finalTemperature = 0.00001;
-int opt_numLevels = 32;
+float opt_initialTemperature = 1;
+float opt_finalTemperature = 1e-29;
+int opt_numLevels = 30;
+int opt_repeatsPerLevel = 1;
 int opt_verbose = 0;
 int opt_seed = 0;
 
@@ -715,9 +783,10 @@ void usage(const char *argv0, bool verbose) {
 		fprintf(stderr, "\t-h --help                   This list\n");
 		fprintf(stderr, "\t-v --verbose                Say more\n");
 		fprintf(stderr, "\t-d --stddev=n               std deviation grid [default=%f]\n", opt_stddev);
-		fprintf(stderr, "\t   --initial-temperature=n  Set Initial temperature [default=%f]\n", opt_initialTemperature);
-		fprintf(stderr, "\t   --final-temperature=n    Set Final temperature [default=%f]\n", opt_finalTemperature);
-		fprintf(stderr, "\t-l --levels=n               Number of levels spanning temperature [default=%d]\n", opt_numLevels);
+		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%f]\n", opt_initialTemperature);
+		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%f]\n", opt_finalTemperature);
+		fprintf(stderr, "\t-l --levels=n               Number of levels [default=%d]\n", opt_numLevels);
+		fprintf(stderr, "\t-r --repeats=n              Number of repeats per level [default=%d]\n", opt_numLevels);
 		fprintf(stderr, "\t-f --filter=n               Filter 1=1x1, 3=3x3, 5=5x5 [default=%d]\n", opt_filterSize);
 		fprintf(stderr, "\t-p --palette=file           Fixed palette [default=%s]\n", opt_palette ? opt_palette : "");
 		fprintf(stderr, "\t-o --opaque=file            Additional opaque oytput [default=%s]\n", opt_opaque ? opt_opaque : "");
@@ -729,7 +798,7 @@ int main(int argc, char *argv[]) {
 		int option_index = 0;
 		enum {
 			LO_INITIALTEMP = 1, LO_FINALTEMP,
-			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_PALETTE = 'p', LO_OPAQUE = 'o'
+			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_REPEATS = 'r', LO_PALETTE = 'p', LO_OPAQUE = 'o'
 		};
 		static struct option long_options[] = {
 			/* name, has_arg, flag, val */
@@ -739,6 +808,7 @@ int main(int argc, char *argv[]) {
 			{"help",                0, 0, LO_HELP},
 			{"initial-temperature", 1, 0, LO_INITIALTEMP},
 			{"levels",              1, 0, LO_LEVELS},
+			{"repeats",             1, 0, LO_REPEATS},
 			{"palette",             1, 0, LO_PALETTE},
 			{"opaque",              1, 0, LO_OPAQUE},
 			{"seed",                1, 0, LO_SEED},
@@ -777,6 +847,9 @@ int main(int argc, char *argv[]) {
 				break;
 			case LO_LEVELS:
 				opt_numLevels = strtol(optarg, NULL, 10);
+				break;
+			case LO_REPEATS:
+				opt_repeatsPerLevel = strtol(optarg, NULL, 10);
 				break;
 			case LO_PALETTE:
 				opt_palette = optarg;
@@ -839,6 +912,7 @@ int main(int argc, char *argv[]) {
 	array2d<double> filter1_weights(1, 1);
 	array2d<double> filter3_weights(3, 3);
 	array2d<double> filter5_weights(5, 5);
+	array2d<double> *filters[] = {NULL, &filter1_weights, NULL, &filter3_weights, NULL, &filter5_weights};
 
 	filter1_weights(0, 0) = 1.0;
 
@@ -926,6 +1000,7 @@ int main(int argc, char *argv[]) {
 
 	// allocate structures
 	array2d<vector_fixed<double, 3> > image(width, height);
+	array2d<int> quantized_image(width, height);
 	vector<vector_fixed<double, 3> > palette;
 	uint8_t enabledPixels[((width * height) >> 3) + 1];
 	memset(enabledPixels, 0, ((width * height) >> 3) + 1);
@@ -1080,18 +1155,17 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,initialTemperature:%f,finalTemperature:%f,stddef=%f,palette=\"%s\"}\n",
+	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,repeatsPerLevel:%d,initialTemperature:%g,finalTemperature:%g,stddef=%f,palette=\"%s\"}\n",
 		arg_inputName,
 		width, height,
 		arg_paletteSize, transparent,
 		opt_seed, opt_filterSize,
-		opt_numLevels, opt_initialTemperature, opt_finalTemperature,
+		opt_numLevels, opt_repeatsPerLevel, opt_initialTemperature, opt_finalTemperature,
 		opt_stddev,
 		opt_palette ? opt_palette : ""
 	);
 
-	array2d<double> *filters[] = {NULL, &filter1_weights, NULL, &filter3_weights, NULL, &filter5_weights};
-	spatial_color_quant(width, height, arg_paletteSize, image, *filters[opt_filterSize], palette, variables, enabledPixels, opt_initialTemperature, opt_finalTemperature, opt_numLevels, 1, opt_verbose);
+	spatial_color_quant(width, height, arg_paletteSize, image, quantized_image, *filters[opt_filterSize], palette, variables, enabledPixels, opt_initialTemperature, opt_finalTemperature, opt_numLevels, opt_repeatsPerLevel, opt_verbose);
 
 	if (arg_outputName) {
 		FILE *fil = fopen(arg_outputName, "w");
@@ -1119,7 +1193,7 @@ int main(int argc, char *argv[]) {
 					gdImageSetPixel(im, x, y, transparent);
 				} else {
 					// enabled pixel
-					int c = best_match_color(variables, x, y, arg_paletteSize);
+					int c = quantized_image(x, y);
 
 					gdImageSetPixel(im, x, y, c);
 				}
@@ -1150,7 +1224,7 @@ int main(int argc, char *argv[]) {
 					gdImageSetPixel(im, x, y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
 				} else {
 					// enabled pixel
-					int c = best_match_color(variables, x, y, arg_paletteSize);
+					int c = quantized_image(x, y);
 					int r, g, b;
 
 					r = round(palette[c](0) * 255);
@@ -1172,7 +1246,7 @@ int main(int argc, char *argv[]) {
 
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
-				int i = best_match_color(variables, x, y, arg_paletteSize);
+				int i = quantized_image(x, y);
 				colourCount[i]++;
 			}
 		}
