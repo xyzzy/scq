@@ -406,40 +406,6 @@ double b_value(array2d<double> &b,
 		return 0.0;
 }
 
-void compute_a_image(array2d<vector_fixed<double, 3> > &image,
-		     array2d<double> &weights,
-		     array2d<vector_fixed<double, 3> > &a) {
-	int radius_width = (weights.get_width() - 1) / 2,
-		radius_height = (weights.get_height() - 1) / 2;
-	for (int i_y = 0; i_y < a.get_height(); i_y++) {
-		for (int i_x = 0; i_x < a.get_width(); i_x++) {
-			for (int j_y = i_y - radius_height; j_y <= i_y + radius_height; j_y++) {
-				if (j_y < 0) j_y = 0;
-				if (j_y >= a.get_height()) break;
-
-				for (int j_x = i_x - radius_width; j_x <= i_x + radius_width; j_x++) {
-					if (j_x < 0) j_x = 0;
-					if (j_x >= a.get_width()) break;
-
-					a(i_x, i_y) += b_value(weights, i_x, i_y, j_x, j_y) * image(j_x, j_y);
-				}
-			}
-			a(i_x, i_y) *= -2.0;
-		}
-	}
-}
-
-template<typename T, int length>
-array2d<T> extract_vector_layer_2d(array2d<vector_fixed<T, length> > s, int k) {
-	array2d<T> result(s.get_width(), s.get_height());
-	for (int i = 0; i < s.get_width(); i++) {
-		for (int j = 0; j < s.get_height(); j++) {
-			result(i, j) = s(i, j)(k);
-		}
-	}
-	return result;
-}
-
 template<typename T, int length>
 vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	vector<T> result;
@@ -499,7 +465,7 @@ void compute_initial_s(array2d<double> &s,
 
 void refine_palette(array2d<double> &s,
 		    array3d<double> &variables,
-		    array2d<vector_fixed<double, 3> > &a,
+		    array2d<vector_fixed<double, 3> > &image,
 		    vector<vector_fixed<double, 3> > &palette) {
 	// We only computed the half of S above the diagonal - reflect it
 	for (int v = 0; v < s.get_width(); v++) {
@@ -512,7 +478,7 @@ void refine_palette(array2d<double> &s,
 	for (unsigned int v = 0; v < palette.size(); v++) {
 		for (int i_y = 0; i_y < variables.get_height(); i_y++) {
 			for (int i_x = 0; i_x < variables.get_width(); i_x++) {
-				r[v] += variables(i_x, i_y, v) * a(i_x, i_y);
+				r[v] += variables(i_x, i_y, v) * image(i_x, i_y) * -2.0;
 			}
 		}
 	}
@@ -564,9 +530,6 @@ void spatial_color_quant(int width,
 			 int verbose) {
 
 	const int size2d = width * height;
-
-	array2d<vector_fixed<double, 3> > a0(width, height);
-	compute_a_image(image, weights, a0);
 
 	// Multiscale annealing
 	double temperature = initial_temperature;
@@ -651,8 +614,8 @@ void spatial_color_quant(int width,
 						p_i += b_value(weights, i_x, i_y, j_x, j_y) * (*j_palette_sum)(j_x, j_y);
 					}
 				}
+				p_i -= image(i_x, i_y);
 				p_i *= 2.0;
-				p_i += a0(i_x, i_y);
 
 				vector<double> meanfield_logs, meanfields;
 				double max_meanfield_log = -numeric_limits<double>::infinity();
@@ -674,6 +637,7 @@ void spatial_color_quant(int width,
 					cout << "Fatal error: Meanfield sum underflowed. Please contact developer." << endl;
 					exit(-1);
 				}
+
 				int old_max_v = best_match_color(variables, i_x, i_y, paletteSize);
 				vector_fixed<double, 3> &j_pal = (*j_palette_sum)(i_x, i_y);
 				for (unsigned int v = 0; v < paletteSize; v++) {
@@ -734,7 +698,7 @@ void spatial_color_quant(int width,
 
 			array2d<double> s(paletteSize, paletteSize);
 			compute_initial_s(s, variables, weights);
-			refine_palette(s, variables, a0, palette);
+			refine_palette(s, variables, image, palette);
 			compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 		}
 	}
