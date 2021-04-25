@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+NOTE: `b0` is basically an upscaled and larger grid than `filter_weights`.
+      Dropping `b0` in favour for weights is an enormous performance boost and might require re-tuning.
+
+```
+2021-04-25 00:07:34 Changed: Replaced `b0` and `s` with single `double` weights.
+```
+
 NOTE: Apparently it is more effective to jump directly to the final temperature and loop until stable.  
       Possible because of initial octree approximation.
 

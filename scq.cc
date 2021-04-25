@@ -382,30 +382,6 @@ void random_permutation(int count, vector<int> &result) {
 	random_shuffle(result.begin(), result.end());
 }
 
-void compute_b_array(array2d<vector_fixed<double, 3> > &filter_weights,
-		     array2d<vector_fixed<double, 3> > &b) {
-	// Assume that the pixel i is always located at the center of b,
-	// and vary pixel j's location through each location in b.
-	int radius_width = (filter_weights.get_width() - 1) / 2,
-		radius_height = (filter_weights.get_height() - 1) / 2;
-	int offset_x = (b.get_width() - 1) / 2 - radius_width;
-	int offset_y = (b.get_height() - 1) / 2 - radius_height;
-	for (int j_y = 0; j_y < b.get_height(); j_y++) {
-		for (int j_x = 0; j_x < b.get_width(); j_x++) {
-			for (int k_y = 0; k_y < filter_weights.get_height(); k_y++) {
-				for (int k_x = 0; k_x < filter_weights.get_width(); k_x++) {
-					if (k_x + offset_x >= j_x - radius_width &&
-					    k_x + offset_x <= j_x + radius_width &&
-					    k_y + offset_y >= j_y - radius_width &&
-					    k_y + offset_y <= j_y + radius_width) {
-						b(j_x, j_y) += filter_weights(k_x, k_y).direct_product(filter_weights(k_x + offset_x - j_x + radius_width, k_y + offset_y - j_y + radius_height));
-					}
-				}
-			}
-		}
-	}
-}
-
 vector_fixed<double, 3> b_value(array2d<vector_fixed<double, 3> > &b,
 				int i_x, int i_y, int j_x, int j_y) {
 	int radius_width = (b.get_width() - 1) / 2,
@@ -603,7 +579,7 @@ void spatial_color_quant(int width,
 			 int height,
 			 int paletteSize,
 			 array2d<vector_fixed<double, 3> > &image,
-			 array2d<vector_fixed<double, 3> > &filter_weights,
+			 array2d<vector_fixed<double, 3> > &weights,
 			 array2d<int> &quantized_image,
 			 vector<vector_fixed<double, 3> > &palette,
 			 array3d<double> &variables,
@@ -616,15 +592,8 @@ void spatial_color_quant(int width,
 
 	const int size2d = width * height;
 
-	// Compute a_i, b_{ij} according to (11)
-	int extended_neighborhood_width = filter_weights.get_width() * 2 - 1;
-	int extended_neighborhood_height = filter_weights.get_height() * 2 - 1;
-	array2d<vector_fixed<double, 3> > b0(extended_neighborhood_width,
-					     extended_neighborhood_height);
-	compute_b_array(filter_weights, b0);
-
 	array2d<vector_fixed<double, 3> > a0(width, height);
-	compute_a_image(image, b0, a0);
+	compute_a_image(image, weights, a0);
 
 	// Multiscale annealing
 	const int iters_per_level = numLevels;
@@ -632,7 +601,7 @@ void spatial_color_quant(int width,
 	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
 	array2d<vector_fixed<double, 3> > s(paletteSize, paletteSize);
-	compute_initial_s(s, variables, b0);
+	compute_initial_s(s, variables, weights);
 	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(width, height);
 	compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
 
@@ -649,9 +618,9 @@ void spatial_color_quant(int width,
 			fprintf(stderr, "level=%d temperature=%f\n", iLevel, temperature);
 
 		// Need to reseat this reference in case we changed p_coarse_variables
-		vector_fixed<double, 3> middle_b = b_value(b0, 0, 0, 0, 0);
+		vector_fixed<double, 3> middle_b = b_value(weights, 0, 0, 0, 0);
 
-		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
+		int center_x = (weights.get_width() - 1) / 2, center_y = (weights.get_height() - 1) / 2;
 		for (int iRepeat = 0; iRepeat < repeatsPerLevel; iRepeat++) {
 			int pixels_changed = 0, pixels_visited = 0, something_changed = 0;
 
@@ -703,12 +672,12 @@ void spatial_color_quant(int width,
 
 				// Compute (25)
 				vector_fixed<double, 3> p_i;
-				for (int y = 0; y < b0.get_height(); y++) {
-					for (int x = 0; x < b0.get_width(); x++) {
+				for (int y = 0; y < weights.get_height(); y++) {
+					for (int x = 0; x < weights.get_width(); x++) {
 						int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 						if (i_x == j_x && i_y == j_y) continue;
 						if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
-						vector_fixed<double, 3> b_ij = b_value(b0, i_x, i_y, j_x, j_y);
+						vector_fixed<double, 3> b_ij = b_value(weights, i_x, i_y, j_x, j_y);
 						vector_fixed<double, 3> j_pal = (*j_palette_sum)(j_x, j_y);
 						p_i(0) += b_ij(0) * j_pal(0);
 						p_i(1) += b_ij(1) * j_pal(1);
@@ -751,7 +720,7 @@ void spatial_color_quant(int width,
 					j_pal(1) += delta_m_iv * palette[v](1);
 					j_pal(2) += delta_m_iv * palette[v](2);
 					if (fabs(delta_m_iv) > 0.001)
-						update_s(s, variables, b0, i_x, i_y, v, delta_m_iv);
+						update_s(s, variables, weights, i_x, i_y, v, delta_m_iv);
 				}
 				int max_v = best_match_color(variables, i_x, i_y, paletteSize);
 
@@ -767,8 +736,8 @@ void spatial_color_quant(int width,
 					// The commented out loops are faster but cause a little bit of distortion
 					//for (int y=center_y-1; y<center_y+1; y++) {
 					//   for (int x=center_x-1; x<center_x+1; x++) {
-					for (int y = min(1, center_y - 1); y < max(b0.get_height() - 1, center_y + 1); y++) {
-						for (int x = min(1, center_x - 1); x < max(b0.get_width() - 1, center_x + 1); x++) {
+					for (int y = min(1, center_y - 1); y < max(weights.get_height() - 1, center_y + 1); y++) {
+						for (int x = min(1, center_x - 1); x < max(weights.get_width() - 1, center_x + 1); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 							if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 
