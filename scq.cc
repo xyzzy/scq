@@ -374,14 +374,6 @@ ostream &operator<<(ostream &out, array3d<T> &a) {
 	return out;
 }
 
-void random_permutation(int count, vector<int> &result) {
-	result.clear();
-	for (int i = 0; i < count; i++) {
-		result.push_back(i);
-	}
-	random_shuffle(result.begin(), result.end());
-}
-
 vector_fixed<double, 3> b_value(array2d<vector_fixed<double, 3> > &b,
 				int i_x, int i_y, int j_x, int j_y) {
 	int radius_width = (b.get_width() - 1) / 2,
@@ -430,35 +422,33 @@ int best_match_color(array3d<double> &vars, int i_x, int i_y, int paletteSize) {
 void compute_initial_s(array2d<double> &s,
 		       array3d<double> &variables,
 		       array2d<double> &weights) {
-	int palette_size = s.get_width();
-	int coarse_width = variables.get_width();
-	int coarse_height = variables.get_height();
+	int paletteSize = s.get_width();
+	int width = variables.get_width();
+	int height = variables.get_height();
 	int center_x = (weights.get_width() - 1) / 2, center_y = (weights.get_height() - 1) / 2;
 	double center_b = b_value(weights, 0, 0, 0, 0);
-	for (int v = 0; v < palette_size; v++) {
-		for (int alpha = v; alpha < palette_size; alpha++) {
+	for (int v = 0; v < paletteSize; v++) {
+		for (int alpha = v; alpha < paletteSize; alpha++) {
 			s(v, alpha) = 0.0;
 		}
 	}
-	for (int i_y = 0; i_y < coarse_height; i_y++) {
-		for (int i_x = 0; i_x < coarse_width; i_x++) {
-			int max_j_x = min(coarse_width, i_x - center_x + weights.get_width());
-			int max_j_y = min(coarse_height, i_y - center_y + weights.get_height());
+	for (int i_y = 0; i_y < height; i_y++) {
+		for (int i_x = 0; i_x < width; i_x++) {
+			int max_j_x = min(width, i_x - center_x + weights.get_width());
+			int max_j_y = min(height, i_y - center_y + weights.get_height());
 			for (int j_y = max(0, i_y - center_y); j_y < max_j_y; j_y++) {
 				for (int j_x = max(0, i_x - center_x); j_x < max_j_x; j_x++) {
 					if (i_x == j_x && i_y == j_y) continue;
 					double b_ij = b_value(weights, i_x, i_y, j_x, j_y);
-					for (int v = 0; v < palette_size; v++) {
-						for (int alpha = v; alpha < palette_size; alpha++) {
-							double mult = variables(i_x, i_y, v) * variables(j_x, j_y, alpha);
-							s(v, alpha) += mult * b_ij;
-						}
+					for (int v = 0; v < paletteSize; v++) {
+						for (int alpha = v; alpha < paletteSize; alpha++)
+							s(v, alpha) += variables(i_x, i_y, v) * variables(j_x, j_y, alpha) * b_ij;
 					}
 				}
 			}
-			for (int v = 0; v < palette_size; v++) {
+
+			for (int v = 0; v < paletteSize; v++)
 				s(v, v) += variables(i_x, i_y, v) * center_b;
-			}
 		}
 	}
 }
@@ -467,6 +457,8 @@ void refine_palette(array2d<double> &s,
 		    array3d<double> &variables,
 		    array2d<vector_fixed<double, 3> > &image,
 		    vector<vector_fixed<double, 3> > &palette) {
+	int paletteSize = palette.size();
+
 	// We only computed the half of S above the diagonal - reflect it
 	for (int v = 0; v < s.get_width(); v++) {
 		for (int alpha = 0; alpha < v; alpha++) {
@@ -474,8 +466,8 @@ void refine_palette(array2d<double> &s,
 		}
 	}
 
-	vector<vector_fixed<double, 3> > r(palette.size());
-	for (unsigned int v = 0; v < palette.size(); v++) {
+	vector<vector_fixed<double, 3> > r(paletteSize);
+	for (unsigned int v = 0; v < paletteSize; v++) {
 		for (int i_y = 0; i_y < variables.get_height(); i_y++) {
 			for (int i_x = 0; i_x < variables.get_width(); i_x++) {
 				r[v] += variables(i_x, i_y, v) * image(i_x, i_y) * -2.0;
@@ -486,31 +478,11 @@ void refine_palette(array2d<double> &s,
 	for (unsigned int k = 0; k < 3; k++) {
 		vector<double> R_k = extract_vector_layer_1d(r, k);
 		vector<double> palette_channel = -1.0 * ((2.0 * s).matrix_inverse()) * R_k;
-		for (unsigned int v = 0; v < palette.size(); v++) {
+		for (unsigned int v = 0; v < paletteSize; v++) {
 			double val = palette_channel[v];
 			if (val < 0) val = 0;
 			if (val > 1) val = 1;
 			palette[v](k) = val;
-		}
-	}
-
-#if TRACE
-	for (unsigned int v=0; v<palette.size(); v++) {
-	    cout << palette[v] << endl;
-	}
-#endif
-}
-
-void compute_initial_j_palette_sum(array2d<vector_fixed<double, 3> > &j_palette_sum,
-				   array3d<double> &coarse_variables,
-				   vector<vector_fixed<double, 3> > &palette) {
-	for (int j_y = 0; j_y < coarse_variables.get_height(); j_y++) {
-		for (int j_x = 0; j_x < coarse_variables.get_width(); j_x++) {
-			vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
-			for (unsigned int alpha = 0; alpha < palette.size(); alpha++) {
-				palette_sum += coarse_variables(j_x, j_y, alpha) * palette[alpha];
-			}
-			j_palette_sum(j_x, j_y) = palette_sum;
 		}
 	}
 }
@@ -535,9 +507,6 @@ void spatial_color_quant(int width,
 	double temperature = initial_temperature;
 	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
-	array2d<vector_fixed<double, 3> > *j_palette_sum = new array2d<vector_fixed<double, 3> >(width, height);
-	compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
-
 	char dirty_flag[size2d];
 	int dirty_xy[size2d];
 	int dirty_in = 0;
@@ -545,17 +514,33 @@ void spatial_color_quant(int width,
 	int dirty_cnt = 0;
 	int dirty_tick = 0;
 
+	array2d<vector_fixed<double, 3> > j_palette_sum(width, height);
+	double meanfield_logs[paletteSize];
+	double meanfields[paletteSize];
+
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
 
-		if (verbose == 2)
-			fprintf(stderr, "level=%d temperature=%f\n", iLevel, temperature);
+		int levelChanged = 0;
 
-		// Need to reseat this reference in case we changed p_coarse_variables
+		if (verbose == 2)
+			fprintf(stderr, "level=%d temperature=%g\n", iLevel, temperature);
+
+		// compute_initial_j_palette_sum
+		for (int j_y = 0; j_y < variables.get_height(); j_y++) {
+			for (int j_x = 0; j_x < variables.get_width(); j_x++) {
+				vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
+				for (unsigned int alpha = 0; alpha < paletteSize; alpha++)
+					palette_sum += variables(j_x, j_y, alpha) * palette[alpha];
+				j_palette_sum(j_x, j_y) = palette_sum;
+			}
+		}
+
 		double middle_b = b_value(weights, 0, 0, 0, 0);
 
 		int center_x = (weights.get_width() - 1) / 2, center_y = (weights.get_height() - 1) / 2;
 		for (int iRepeat = 0; iRepeat < repeatsPerLevel; iRepeat++) {
-			int pixels_changed = 0, pixels_visited = 0, something_changed = 0;
+			int pixels_changed = 0, pixels_visited = 0;
+			int repeatChanged = 0;
 
 			// put enabled pixels in queue
 			dirty_cnt = 0;
@@ -611,27 +596,34 @@ void spatial_color_quant(int width,
 						if (i_x == j_x && i_y == j_y) continue;
 						if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 
-						p_i += b_value(weights, i_x, i_y, j_x, j_y) * (*j_palette_sum)(j_x, j_y);
+						p_i += b_value(weights, i_x, i_y, j_x, j_y) * j_palette_sum(j_x, j_y);
 					}
 				}
-				p_i -= image(i_x, i_y);
-				p_i *= 2.0;
+				// NOTE: p_i is now the calculated pixel value minus the center component
+				p_i = image(i_x, i_y) - p_i;
+				// NOTE: p_i is now what `middle_b(x,y) * j_palette_sum(x,y)` should be
+				p_i *= -2.0;
+				// NOTE: my monkey brain does not understand why times minus-two
 
-				vector<double> meanfield_logs, meanfields;
 				double max_meanfield_log = -numeric_limits<double>::infinity();
-				double meanfield_sum = 0.0;
 				for (unsigned int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
 					// will choose a value that makes the maximum e^100.
-					meanfield_logs.push_back(-(palette[v].dot_product(p_i + middle_b * palette[v])) / temperature);
-					if (meanfield_logs.back() > max_meanfield_log)
-						max_meanfield_log = meanfield_logs.back();
+					double m = -(palette[v].dot_product(p_i + middle_b * palette[v])) / temperature;
+
+					meanfield_logs[v] = m;
+					if (m > max_meanfield_log)
+						max_meanfield_log = m;
 				}
+
+				double meanfield_sum = 0.0;
 				for (unsigned int v = 0; v < paletteSize; v++) {
-					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 100));
-					meanfield_sum += meanfields.back();
+					double m = exp(meanfield_logs[v] - max_meanfield_log + 100);
+
+					meanfields[v] = m;
+					meanfield_sum += m;
 				}
 				if (meanfield_sum == 0) {
 					cout << "Fatal error: Meanfield sum underflowed. Please contact developer." << endl;
@@ -639,7 +631,7 @@ void spatial_color_quant(int width,
 				}
 
 				int old_max_v = best_match_color(variables, i_x, i_y, paletteSize);
-				vector_fixed<double, 3> &j_pal = (*j_palette_sum)(i_x, i_y);
+				vector_fixed<double, 3> &j_pal = j_palette_sum(i_x, i_y);
 				for (unsigned int v = 0; v < paletteSize; v++) {
 					double new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
@@ -656,17 +648,16 @@ void spatial_color_quant(int width,
 				// Only consider it a change if the colors are different enough
 				if (max_v != old_max_v) {
 					pixels_changed++;
-					something_changed++;
+					repeatChanged++;
+					levelChanged++;
 
 					// We don't add the outer layer of pixels , because
 					// there isn't much weight there, and if it does need
 					// to be visited, it'll probably be added when we visit
 					// neighboring pixels.
-					// The commented out loops are faster but cause a little bit of distortion
-					//for (int y=center_y-1; y<center_y+1; y++) {
-					//   for (int x=center_x-1; x<center_x+1; x++) {
-					for (int y = min(1, center_y - 1); y < max(weights.get_height() - 1, center_y + 1); y++) {
-						for (int x = min(1, center_x - 1); x < max(weights.get_width() - 1, center_x + 1); x++) {
+
+					for (int y = 0; y < weights.get_height(); y++) {
+						for (int x = 0; x < weights.get_width(); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 							if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 
@@ -691,16 +682,18 @@ void spatial_color_quant(int width,
 				}
 			}
 
-			if (!something_changed)
-				break;
 			if (verbose == 1)
-				fprintf(stderr, "level=%d temperature=%f changed=%d\n", iLevel, temperature, something_changed);
-
-			array2d<double> s(paletteSize, paletteSize);
-			compute_initial_s(s, variables, weights);
-			refine_palette(s, variables, image, palette);
-			compute_initial_j_palette_sum(*j_palette_sum, variables, palette);
+				fprintf(stderr, "level=%d temperature=%g changed=%d\n", iLevel, temperature, repeatChanged);
+			if (!repeatChanged)
+				break;
 		}
+
+		array2d<double> s(paletteSize, paletteSize);
+		compute_initial_s(s, variables, weights);
+		refine_palette(s, variables, image, palette);
+
+		if (!levelChanged)
+			break;
 	}
 }
 

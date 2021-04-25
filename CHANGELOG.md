@@ -7,16 +7,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
-NOTE: `a0` is basically a blurred version of `image`.  
-      Don't forget to compensate the '-2.0' multiplier.
+```
+2021-04-25 12:36:07 Changed: Made `p_i` more clearer.
+```
+
+NOTE:
+ - `a0` is basically a blurred version of `image`.
+ - Don't forget to compensate the '-2.0' multiplier.
 
 ```
 2021-04-25 01:28:24 Changed: Replaced `a0` with `image`.
 2021-04-25 01:23:35 Changed: Moved final image extraction to caller.
 ```
 
-NOTE: Pixel detection change: `if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0))`  
-      Is replaced with: `if (max_v != old_max_v)` because this indicates an actual change in palette index.
+NOTE:  
+ - Pixel detection change: `if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0))`
+ - Is replaced with: `if (max_v != old_max_v)` because this indicates an actual change in palette index.
 
 ```
 2021-04-25 01:13:50 Changed: Simplify pixel change detection.
@@ -24,24 +30,27 @@ NOTE: Pixel detection change: `if ((palette[max_v] - palette[old_max_v]).norm_sq
 2021-04-25 01:02:31 Changed: Replaced `weights` and `s` with single-double.
 ```
 
-NOTE: `b0` is basically an upscaled and larger grid than `filter_weights`.  
-      Dropping `b0` in favour for weights is an enormous performance boost and might require re-tuning.
+NOTE:  
+ - `b0` is basically an upscaled and larger grid than `filter_weights`.
+ - Dropping `b0` in favour for weights is an enormous performance boost and might require re-tuning.
 
 ```
 2021-04-25 00:07:34 Changed: Replaced `b0` with `weights`.
 ```
 
-NOTE: Apparently it is more effective to jump directly to the final temperature and loop until stable.  
-      Possible because of initial octree approximation.
+NOTE:  
+ - Apparently it is more effective to jump directly to the final temperature and loop until stable.
+ - Possible because of initial octree approximation.
 
 ```
 2021-04-24 23:40:58 Changed: Redesigned visit queue.
 2021-04-24 23:20:52 Changed: Move allocation of `variables` to caller.
 ```
 
-NOTE: By chance of coincidence the original code worked with the visit queue.  
-      The queue was reset after 10% expansion visiting all pixels, effectively greatly increasing `repeatPerLevel`.  
-      This needs to be re-tuned.
+NOTE:  
+ - By chance of coincidence the original code worked with the visit queue.
+ - The queue is reset after 10% expansion visiting all pixels, effectively greatly increasing repeatPerLevel.
+ - This needs to be re-tunes.
 
 ```
 2021-04-24 22:31:02 Changed: Set `max_coarse_level=0` and drop coarse levels (because octree gives sufficient accuracy). 
