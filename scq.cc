@@ -470,14 +470,16 @@ void refine_palette(array2d<double> &s,
 	for (unsigned int v = 0; v < paletteSize; v++) {
 		for (int i_y = 0; i_y < variables.get_height(); i_y++) {
 			for (int i_x = 0; i_x < variables.get_width(); i_x++) {
-				r[v] += variables(i_x, i_y, v) * image(i_x, i_y) * -2.0;
+				r[v] += variables(i_x, i_y, v) * image(i_x, i_y);
 			}
 		}
 	}
 
+	array2d<double> sInv =  s.matrix_inverse();
+
 	for (unsigned int k = 0; k < 3; k++) {
 		vector<double> R_k = extract_vector_layer_1d(r, k);
-		vector<double> palette_channel = -1.0 * ((2.0 * s).matrix_inverse()) * R_k;
+		vector<double> palette_channel = sInv * R_k;
 		for (unsigned int v = 0; v < paletteSize; v++) {
 			double val = palette_channel[v];
 			if (val < 0) val = 0;

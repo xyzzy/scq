@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 ```
+2021-04-25 13:43:52 Changed: Constant folding in `refine_palette()`.
 2021-04-25 12:36:07 Changed: Made `p_i` more clearer.
 ```
 
