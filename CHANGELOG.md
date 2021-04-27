@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## 2021-04-27 17:18:54 [Version 0.2.0]
+
 ```
 2021-04-24 23:40:58 Changed: Redesigned visit queue.
 2021-04-27 21:12:52 Fixed: Use `quantized_image` to detect changes and revisit pixels.
@@ -27,5 +29,6 @@ NOTE: Each of the above are minor changes that effect the outcome of the anneali
 2021-24-01 11:28:59 Historic commit.
 ```
 
-[Unreleased]: https://github.com/xyzzy/scq/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/xyzzy/scq/compare/v0.2.0...HEAD
+[Version 0.2.0]: https://github.com/xyzzy/scq/compare/v0.1.0...v0.2.0
 [Version 0.1.0]: https://github.com/xyzzy/scq/tree/v0.1.0

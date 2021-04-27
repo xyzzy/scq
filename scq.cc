@@ -473,18 +473,6 @@ vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	return result;
 }
 
-int best_match_color(array3d<double> &coarse, int i_x, int i_y, int paletteSize) {
-	int max_v = 0;
-	double max_weight = coarse(i_x, i_y, 0);
-	for (unsigned int v = 1; v < paletteSize; v++) {
-		if (coarse(i_x, i_y, v) > max_weight) {
-			max_v = v;
-			max_weight = coarse(i_x, i_y, v);
-		}
-	}
-	return max_v;
-}
-
 void compute_initial_s(array2d<vector_fixed<double, 3> > &s,
 		       array3d<double> &coarse,
 		       array2d<vector_fixed<double, 3> > &b) {
