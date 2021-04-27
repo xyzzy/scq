@@ -257,10 +257,12 @@ public:
 		array2d<T> &a = *this;
 
 		// Set result to identity matrix
-		result *= 0;
-		for (int i = 0; i < get_width(); i++) {
+		for (int j = 0; j < get_height(); j++)
+			for (int i = 0; i < get_width(); i++)
+				result(i, j) = 0;
+		for (int i = 0; i < get_width(); i++)
 			result(i, i) = 1;
-		}
+
 		// Reduce to echelon form, mirroring in result
 		for (int i = 0; i < get_width(); i++) {
 			result.multiply_row_scalar(i, 1 / a(i, i));

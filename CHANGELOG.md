@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 ```
+2021-04-25 18:59:48 Fixed: shortcut to set identity matrix triggers a compiler bug.
 2021-04-21 15:54:33 Added: `scq.cc` by replacing front-end.
 2021-04-21 12:13:28 Added: Version used by other projects and original v0.4.
 2021-04-05 03:14:49 Added: `moonwalk` theme.
