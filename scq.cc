@@ -187,11 +187,9 @@ public:
 		width = rhs.width;
 		height = rhs.height;
 		data = new T[width * height];
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j < height; j++) {
+		for (int j = 0; j < height; j++)
+			for (int i = 0; i < width; i++)
 				(*this)(i, j) = rhs.data[j * width + i];
-			}
-		}
 	}
 
 	~array2d() {
@@ -207,8 +205,8 @@ public:
 	int get_height() { return height; }
 
 	array2d<T> &operator*=(T scalar) {
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j < height; j++) {
+		for (int j = 0; j < height; j++) {
+			for (int i = 0; i < width; i++) {
 				(*this)(i, j) *= scalar;
 			}
 		}
@@ -325,11 +323,10 @@ public:
 		height = rhs.height;
 		depth = rhs.depth;
 		data = new T[width * height * depth];
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j < height; j++) {
-				for (int k = 0; k < depth; k++) {
+		for (int j = 0; j < height; j++) {
+			for (int i = 0; i < width; i++) {
+				for (int k = 0; k < depth; k++)
 					(*this)(i, j, k) = rhs.data[j * width * depth + i * depth + k];
-				}
 			}
 		}
 	}
@@ -374,24 +371,6 @@ ostream &operator<<(ostream &out, array3d<T> &a) {
 	}
 	out << ")" << endl;
 	return out;
-}
-
-void random_permutation(int count, vector<int> &result) {
-	result.clear();
-	for (int i = 0; i < count; i++) {
-		result.push_back(i);
-	}
-	random_shuffle(result.begin(), result.end());
-}
-
-void random_permutation_2d(int width, int height, deque<pair<int, int> > &result) {
-	vector<int> perm1d;
-	random_permutation(width * height, perm1d);
-	while (!perm1d.empty()) {
-		int idx = perm1d.back();
-		perm1d.pop_back();
-		result.push_back(pair<int, int>(idx % width, idx / width));
-	}
 }
 
 void compute_b_array(array2d<double> &weights,
@@ -454,17 +433,6 @@ void compute_a_image(array2d<vector_fixed<double, 3> > &image,
 }
 
 template<typename T, int length>
-array2d<T> extract_vector_layer_2d(array2d<vector_fixed<T, length> > s, int k) {
-	array2d<T> result(s.get_width(), s.get_height());
-	for (int i = 0; i < s.get_width(); i++) {
-		for (int j = 0; j < s.get_height(); j++) {
-			result(i, j) = s(i, j)(k);
-		}
-	}
-	return result;
-}
-
-template<typename T, int length>
 vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	vector<T> result;
 	for (unsigned int i = 0; i < s.size(); i++) {
@@ -476,32 +444,34 @@ vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 void compute_initial_s(array2d<double> &s,
 		       array3d<double> &coarse,
 		       array2d<double> &b) {
-	int palette_size = s.get_width();
-	int coarse_width = coarse.get_width();
-	int coarse_height = coarse.get_height();
+	int paletteSize = s.get_width();
+	int width = coarse.get_width();
+	int height = coarse.get_height();
+	int filterSize = b.get_width();
+
 	int center_x = (b.get_width() - 1) / 2, center_y = (b.get_height() - 1) / 2;
 	double center_b = b_value(b, 0, 0, 0, 0);
-	vector_fixed<double, 3> zero_vector;
-	for (int v = 0; v < palette_size; v++) {
-		for (int alpha = v; alpha < palette_size; alpha++)
+
+	for (int v = 0; v < paletteSize; v++) {
+		for (int alpha = v; alpha < paletteSize; alpha++)
 			s(v, alpha) = 0.0;
 	}
-	for (int i_y = 0; i_y < coarse_height; i_y++) {
-		for (int i_x = 0; i_x < coarse_width; i_x++) {
-			int max_j_x = min(coarse_width, i_x - center_x + b.get_width());
-			int max_j_y = min(coarse_height, i_y - center_y + b.get_height());
+	for (int i_y = 0; i_y < height; i_y++) {
+		for (int i_x = 0; i_x < width; i_x++) {
+			int max_j_x = min(width, i_x - center_x + filterSize);
+			int max_j_y = min(height, i_y - center_y + filterSize);
 			for (int j_y = max(0, i_y - center_y); j_y < max_j_y; j_y++) {
 				for (int j_x = max(0, i_x - center_x); j_x < max_j_x; j_x++) {
 					if (i_x == j_x && i_y == j_y) continue;
 					double b_ij = b_value(b, i_x, i_y, j_x, j_y);
-					for (int v = 0; v < palette_size; v++) {
-						for (int alpha = v; alpha < palette_size; alpha++)
+					for (int v = 0; v < paletteSize; v++) {
+						for (int alpha = v; alpha < paletteSize; alpha++)
 							s(v, alpha) += b_ij * coarse(i_x, i_y, v) * coarse(j_x, j_y, alpha);
 					}
 				}
 			}
-			for (int v = 0; v < palette_size; v++)
-				s(v, v) += coarse(i_x, i_y, v) * center_b;
+			for (int v = 0; v < paletteSize; v++)
+				s(v, v) += center_b * coarse(i_x, i_y, v);
 		}
 	}
 }
@@ -544,20 +514,6 @@ void refine_palette(array2d<double> &s,
 #endif
 }
 
-void compute_initial_j_palette_sum(array2d<vector_fixed<double, 3> > &j_palette_sum,
-				   array3d<double> &coarse,
-				   vector<vector_fixed<double, 3> > &palette) {
-	for (int j_y = 0; j_y < coarse.get_height(); j_y++) {
-		for (int j_x = 0; j_x < coarse.get_width(); j_x++) {
-			vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
-			for (unsigned int alpha = 0; alpha < palette.size(); alpha++) {
-				palette_sum += coarse(j_x, j_y, alpha) * palette[alpha];
-			}
-			j_palette_sum(j_x, j_y) = palette_sum;
-		}
-	}
-}
-
 void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			 array2d<double> &weights,
 			 array2d<int> &quantized_image,
@@ -579,8 +535,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	const int paletteSize = palette.size();
 
 	// force change detection by invalidating output image
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
+	for (int x = 0; x < width; x++) {
+		for (int y = 0; y < height; y++) {
 			quantized_image(x, y) = -1;
 		}
 	}
@@ -618,7 +574,17 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			compute_initial_s(s, coarse, b0);
 			refine_palette(s, coarse, a0, palette);
 		}
-		compute_initial_j_palette_sum(j_palette_sum, coarse, palette);
+		/*
+		 * compute_initial_j_palette_sum
+		 */
+		for (int j_y = 0; j_y < height; j_y++) {
+			for (int j_x = 0; j_x < width; j_x++) {
+				vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
+				for (unsigned int alpha = 0; alpha < palette.size(); alpha++)
+					palette_sum += coarse(j_x, j_y, alpha) * palette[alpha];
+				j_palette_sum(j_x, j_y) = palette_sum;
+			}
+		}
 
 		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
 		for (int iRepeat = 0; iRepeat < repeatsPerLevel; iRepeat++) {

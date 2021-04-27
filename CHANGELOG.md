@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-27 23:02:49 Changed: Inlined `compute_initial_j_palette_sum` and adjusted `for` loop hierarchy.
 2021-04-25 01:02:31 Changed: Replaced `weights` and `s` with single-double.
 2021-04-27 22:01:15 Added: Save snapshots of internal image. 
 ```
