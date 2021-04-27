@@ -83,8 +83,6 @@ public:
 		return data[i];
 	}
 
-	int get_length() { return length; }
-
 	T norm_squared() {
 		T result = 0;
 		for (int i = 0; i < length; i++) {
@@ -586,11 +584,10 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			 array3d<double> &coarse,
 			 double initial_temperature,
 			 double final_temperature,
-			 int temps_per_level,
-			 int repeats_per_temp,
+			 int numLevels,
+			 int repeatsPerLevel,
 			 int verbose) {
 
-	double temperature = initial_temperature;
 
 	// Compute a_i, b_{ij} according to (11)
 	int extended_neighborhood_width = filter_weights.get_width() * 2 - 1;
@@ -601,22 +598,16 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	array2d<vector_fixed<double, 3> > a0(image.get_width(), image.get_height());
 	compute_a_image(image, b0, a0);
 
-	// Multiscale annealing
-	const int iters_per_level = temps_per_level;
-	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (temps_per_level - 1));
-
-	if (verbose)
-		cout << "Temperature multiplier: " << temperature_multiplier << endl;
-
-	int iters_at_current_level = 0;
+	double temperature = initial_temperature;
+	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
 	array2d<vector_fixed<double, 3> > j_palette_sum(coarse.get_width(), coarse.get_height());
 
-	for (int iLevel = 0; temperature > final_temperature; iLevel++) {
-		vector_fixed<double, 3> middle_b = b_value(b0, 0, 0, 0, 0);
+	int pixelsChanged = 0, pixelsVisited = 0;
+	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
+		int levelChanged = 0;
 
-		if (verbose)
-			cout << "Temperature: " << temperature << endl;
+		vector_fixed<double, 3> middle_b = b_value(b0, 0, 0, 0, 0);
 
 		// construct new palette for this level
 		if (iLevel > 0) {
@@ -627,9 +618,9 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		compute_initial_j_palette_sum(j_palette_sum, coarse, palette);
 
 		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
-		int step_counter = 0;
-		for (int repeat = 0; repeat < repeats_per_temp; repeat++) {
-			int pixels_changed = 0, pixels_visited = 0;
+		for (int repeat = 0; repeat < repeatsPerLevel; repeat++) {
+			int repeatChanged = 0;
+
 			deque<pair<int, int> > visit_queue;
 			random_permutation_2d(coarse.get_width(), coarse.get_height(), visit_queue);
 
@@ -696,16 +687,17 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					j_pal(2) += delta_m_iv * palette[v](2);
 				}
 				int max_v = best_match_color(coarse, i_x, i_y, palette.size());
+
 				// Only consider it a change if the colors are different enough
 				if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0)) {
-					pixels_changed++;
+					pixelsChanged++;
+					repeatChanged++;
+					levelChanged++;
+
 					// We don't add the outer layer of pixels , because
 					// there isn't much weight there, and if it does need
 					// to be visited, it'll probably be added when we visit
 					// neighboring pixels.
-					// The commented out loops are faster but cause a little bit of distortion
-					//for (int y=center_y-1; y<center_y+1; y++) {
-					//   for (int x=center_x-1; x<center_x+1; x++) {
 					for (int y = min(1, center_y - 1); y < max(b0.get_height() - 1, center_y + 1); y++) {
 						for (int x = min(1, center_x - 1); x < max(b0.get_width() - 1, center_x + 1); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
@@ -714,30 +706,23 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 						}
 					}
 				}
-				pixels_visited++;
-
-				// Show progress with dots - in a graphical interface,
-				// we'd show progressive refinements of the image instead,
-				// and maybe a palette preview.
-				step_counter++;
-				if ((step_counter % 10000) == 0) {
-					cout << ".";
-					cout.flush();
-#if TRACE
-					cout << visit_queue.size();
-#endif
-				}
+				pixelsVisited++;
 			}
 
-			if (verbose > 1)
-				cout << "Pixels changed: " << pixels_changed << endl;
+			if (verbose == 1) {
+				fprintf(stderr, "level=%d temperature=%g visited=%d changed=%d\n", iLevel, temperature, pixelsVisited, pixelsChanged);
+				pixelsVisited = pixelsChanged = 0;
+			}
+			if (!repeatChanged)
+				break;
 		}
 
-		iters_at_current_level++;
-		if ((temperature <= final_temperature) && iters_at_current_level >= iters_per_level)
+		if (verbose >= 2) {
+			fprintf(stderr, "level=%d temperature=%g visited=%d changed=%d\n", iLevel, temperature, pixelsVisited, pixelsChanged);
+			pixelsVisited = pixelsChanged = 0;
+		}
+		if (!levelChanged)
 			break;
-		if (temperature > final_temperature)
-			temperature *= temperature_multiplier;
 	}
 
 	{
