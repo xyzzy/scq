@@ -526,38 +526,6 @@ void compute_initial_s(array2d<vector_fixed<double, 3> > &s,
 	}
 }
 
-void update_s(array2d<vector_fixed<double, 3> > &s,
-	      array3d<double> &coarse,
-	      array2d<vector_fixed<double, 3> > &b,
-	      int j_x, int j_y, int alpha,
-	      double delta) {
-	int palette_size = s.get_width();
-	int coarse_width = coarse.get_width();
-	int coarse_height = coarse.get_height();
-	int center_x = (b.get_width() - 1) / 2, center_y = (b.get_height() - 1) / 2;
-	int max_i_x = min(coarse_width, j_x + center_x + 1);
-	int max_i_y = min(coarse_height, j_y + center_y + 1);
-	for (int i_y = max(0, j_y - center_y); i_y < max_i_y; i_y++) {
-		for (int i_x = max(0, j_x - center_x); i_x < max_i_x; i_x++) {
-			vector_fixed<double, 3> delta_b_ij = delta * b_value(b, i_x, i_y, j_x, j_y);
-			if (i_x == j_x && i_y == j_y) continue;
-			for (int v = 0; v <= alpha; v++) {
-				double mult = coarse(i_x, i_y, v);
-				s(v, alpha)(0) += mult * delta_b_ij(0);
-				s(v, alpha)(1) += mult * delta_b_ij(1);
-				s(v, alpha)(2) += mult * delta_b_ij(2);
-			}
-			for (int v = alpha; v < palette_size; v++) {
-				double mult = coarse(i_x, i_y, v);
-				s(alpha, v)(0) += mult * delta_b_ij(0);
-				s(alpha, v)(1) += mult * delta_b_ij(1);
-				s(alpha, v)(2) += mult * delta_b_ij(2);
-			}
-		}
-	}
-	s(alpha, alpha) += delta * b_value(b, 0, 0, 0, 0);
-}
-
 void refine_palette(array2d<vector_fixed<double, 3> > &s,
 		    array3d<double> &coarse,
 		    array2d<vector_fixed<double, 3> > &a,
@@ -641,17 +609,22 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		cout << "Temperature multiplier: " << temperature_multiplier << endl;
 
 	int iters_at_current_level = 0;
-	array2d<vector_fixed<double, 3> > s(palette.size(), palette.size());
-	compute_initial_s(s, coarse, b0);
 
 	array2d<vector_fixed<double, 3> > j_palette_sum(coarse.get_width(), coarse.get_height());
-	compute_initial_j_palette_sum(j_palette_sum, coarse, palette);
 
-	while (temperature > final_temperature) {
+	for (int iLevel = 0; temperature > final_temperature; iLevel++) {
 		vector_fixed<double, 3> middle_b = b_value(b0, 0, 0, 0, 0);
 
 		if (verbose)
 			cout << "Temperature: " << temperature << endl;
+
+		// construct new palette for this level
+		if (iLevel > 0) {
+			array2d<vector_fixed<double, 3> > s(palette.size(), palette.size());
+			compute_initial_s(s, coarse, b0);
+			refine_palette(s, coarse, a0, palette);
+		}
+		compute_initial_j_palette_sum(j_palette_sum, coarse, palette);
 
 		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
 		int step_counter = 0;
@@ -721,8 +694,6 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					j_pal(0) += delta_m_iv * palette[v](0);
 					j_pal(1) += delta_m_iv * palette[v](1);
 					j_pal(2) += delta_m_iv * palette[v](2);
-					if (fabs(delta_m_iv) > 0.001)
-						update_s(s, coarse, b0, i_x, i_y, v, delta_m_iv);
 				}
 				int max_v = best_match_color(coarse, i_x, i_y, palette.size());
 				// Only consider it a change if the colors are different enough
@@ -760,9 +731,6 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 
 			if (verbose > 1)
 				cout << "Pixels changed: " << pixels_changed << endl;
-
-			refine_palette(s, coarse, a0, palette);
-			compute_initial_j_palette_sum(j_palette_sum, coarse, palette);
 		}
 
 		iters_at_current_level++;
