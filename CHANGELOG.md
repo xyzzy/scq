@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## 2021-04-27 23:05:32 [Version 0.3.0]
+
 ```
 2021-04-27 23:02:49 Changed: Inlined `compute_initial_j_palette_sum` and adjusted `for` loop hierarchy.
 2021-04-25 01:02:31 Changed: Replaced `weights` and `s` with single-double.
@@ -35,6 +37,7 @@ NOTE: Each of the above are minor changes that effect the outcome of the anneali
 2021-24-01 11:28:59 Historic commit.
 ```
 
-[Unreleased]: https://github.com/xyzzy/scq/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/xyzzy/scq/compare/v0.3.0...HEAD
+[Version 0.3.0]: https://github.com/xyzzy/scq/compare/v0.2.0...v0.3.0
 [Version 0.2.0]: https://github.com/xyzzy/scq/compare/v0.1.0...v0.2.0
 [Version 0.1.0]: https://github.com/xyzzy/scq/tree/v0.1.0
