@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+```
+2021-04-27 17:26:05 Removed: Coarse levels/zooming, possible because of octree palette prediction.
+```
+
+NOTE: Each of the above are major changes that effect the outcome of the annealing.
+
 ## 2021-04-27 17:18:54 Version 0.1.0
 
 ```
