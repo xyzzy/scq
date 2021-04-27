@@ -582,12 +582,24 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			 array2d<int> &quantized_image,
 			 vector<vector_fixed<double, 3> > &palette,
 			 array3d<double> &coarse,
+			 const uint8_t *enabledPixels,
 			 double initial_temperature,
 			 double final_temperature,
 			 int numLevels,
 			 int repeatsPerLevel,
-			 int verbose) {
+			 int verbose,
+			 int visit2) {
 
+	const int width = image.get_width();
+	const int height = image.get_height();
+	const int size2d = width * height;
+
+	// force change detection by invalidating output image
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			quantized_image(x, y) = -1;
+		}
+	}
 
 	// Compute a_i, b_{ij} according to (11)
 	int extended_neighborhood_width = filter_weights.get_width() * 2 - 1;
@@ -595,13 +607,20 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	array2d<vector_fixed<double, 3> > b0(extended_neighborhood_width, extended_neighborhood_height);
 	compute_b_array(filter_weights, b0);
 
-	array2d<vector_fixed<double, 3> > a0(image.get_width(), image.get_height());
+	array2d<vector_fixed<double, 3> > a0(width, height);
 	compute_a_image(image, b0, a0);
 
 	double temperature = initial_temperature;
 	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
-	array2d<vector_fixed<double, 3> > j_palette_sum(coarse.get_width(), coarse.get_height());
+	char visit_pending[size2d]; // indexed by y*width+x
+	int visit_xy[size2d];
+	int visit_in = 0;
+	int visit_out = 0;
+	int visit_cnt = 0;
+	int visit_tick = 0;
+
+	array2d<vector_fixed<double, 3> > j_palette_sum(width, height);
 
 	int pixelsChanged = 0, pixelsVisited = 0;
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
@@ -618,23 +637,41 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		compute_initial_j_palette_sum(j_palette_sum, coarse, palette);
 
 		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
-		for (int repeat = 0; repeat < repeatsPerLevel; repeat++) {
+		for (int iRepeat = 0; iRepeat < repeatsPerLevel; iRepeat++) {
 			int repeatChanged = 0;
 
-			deque<pair<int, int> > visit_queue;
-			random_permutation_2d(coarse.get_width(), coarse.get_height(), visit_queue);
+			// put enabled pixels in queue
+			visit_cnt = 0;
+			for (int y = 0; y < height; y++) {
+				for (int x = 0; x < width; x++) {
+					int xy = y * width + x;
+
+					if (enabledPixels[xy >> 3] & (1 << (xy & 7))) {
+						visit_pending[y * width + x] = 1;
+						visit_xy[visit_cnt++] = xy;
+					}
+				}
+			}
+			visit_out = 0;
+			visit_in = visit_cnt % size2d; // next position to add to queue
+			visit_tick = visit_cnt; // when to generate next log message
 
 			// Compute 2*sum(j in extended neighborhood of i, j != i) b_ij
 
-			while (!visit_queue.empty()) {
-				// If we get to 10% above initial size, just revisit them all
-				if ((int) visit_queue.size() > coarse.get_width() * coarse.get_height() * 11 / 10) {
-					visit_queue.clear();
-					random_permutation_2d(coarse.get_width(), coarse.get_height(), visit_queue);
-				}
+			int maxLoop = 100; // in case when stuck in local minimum
+			while (visit_cnt) {
+				/*
+				 * Get next location to visit
+				 */
+				const int i_x = visit_xy[visit_out] % width;
+				const int i_y = visit_xy[visit_out] / width;
+				const int xy = i_y * width + i_x;
+				visit_out = (visit_out + 1) % size2d;
+				visit_cnt--;
 
-				int i_x = visit_queue.front().first, i_y = visit_queue.front().second;
-				visit_queue.pop_front();
+				// test if pixel was enabled
+				if (!(enabledPixels[xy >> 3] & (1 << (xy & 7))))
+					continue;
 
 				// Compute (25)
 				vector_fixed<double, 3> p_i;
@@ -642,7 +679,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					for (int x = 0; x < b0.get_width(); x++) {
 						int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 						if (i_x == j_x && i_y == j_y) continue;
-						if (j_x < 0 || j_y < 0 || j_x >= coarse.get_width() || j_y >= coarse.get_height()) continue;
+						if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 						vector_fixed<double, 3> b_ij = b_value(b0, i_x, i_y, j_x, j_y);
 						vector_fixed<double, 3> j_pal = j_palette_sum(j_x, j_y);
 						p_i(0) += b_ij(0) * j_pal(0);
@@ -673,26 +710,40 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					cout << "Fatal error: Meanfield sum underflowed. Please contact developer." << endl;
 					exit(-1);
 				}
-				int old_max_v = best_match_color(coarse, i_x, i_y, palette.size());
+
+				// update variables and determine new palette index for pixel
+				int max_v = 0;
+				double max_weight = -1;
+
 				vector_fixed<double, 3> &j_pal = j_palette_sum(i_x, i_y);
 				for (unsigned int v = 0; v < palette.size(); v++) {
 					double new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
 					if (new_val >= 1) new_val = 1 - 1e-10;
+
 					double delta_m_iv = new_val - coarse(i_x, i_y, v);
-					coarse(i_x, i_y, v) = new_val;
 					j_pal(0) += delta_m_iv * palette[v](0);
 					j_pal(1) += delta_m_iv * palette[v](1);
 					j_pal(2) += delta_m_iv * palette[v](2);
-				}
-				int max_v = best_match_color(coarse, i_x, i_y, palette.size());
 
-				// Only consider it a change if the colors are different enough
-				if ((palette[max_v] - palette[old_max_v]).norm_squared() >= 1.0 / (255.0 * 255.0)) {
+					coarse(i_x, i_y, v) = new_val;
+
+					// keep track of new max_weight
+					if (new_val > max_weight) {
+						max_v = v;
+						max_weight = new_val;
+					}
+				}
+
+				// did color change?
+				if (max_v != quantized_image(i_x, i_y)) {
 					pixelsChanged++;
 					repeatChanged++;
 					levelChanged++;
+
+					// update output image
+					quantized_image(i_x, i_y) = max_v;
 
 					// We don't add the outer layer of pixels , because
 					// there isn't much weight there, and if it does need
@@ -701,16 +752,63 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					for (int y = min(1, center_y - 1); y < max(b0.get_height() - 1, center_y + 1); y++) {
 						for (int x = min(1, center_x - 1); x < max(b0.get_width() - 1, center_x + 1); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
-							if (j_x < 0 || j_y < 0 || j_x >= coarse.get_width() || j_y >= coarse.get_height()) continue;
-							visit_queue.push_back(pair<int, int>(j_x, j_y));
+							if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
+
+							// revisit pixel
+							if (!visit_pending[j_y * width + j_x]) {
+								visit_pending[j_y * width + j_x] = 1;
+								visit_cnt++;
+								visit_xy[visit_in] = j_y * width + j_x;
+								visit_in = (visit_in + 1) % size2d;
+							}
 						}
 					}
 				}
+
+				// mark pixel as processed
+				visit_pending[i_y * width + i_x] = 0;
 				pixelsVisited++;
+
+				if (--visit_tick <= 0) {
+					if (verbose >= 2) {
+						fprintf(stderr, "level=%d iRepeat=%d temperature=%g visited=%d changed=%d\n", iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged);
+						pixelsVisited = pixelsChanged = 0;
+					}
+					visit_tick = visit_cnt;
+					if (--maxLoop < 0)
+						break;
+
+					/*
+					 * NOTE: Adding neighbours usually goes in bursts that might introduce visual grid/stripes
+					 *       Randomizing the visit queue more will introduce more noise, and possibly better annealing
+					 *       only it might require more repeatsPerLevel (slower) and introduce colour fading for 'rare' colours.
+					 */
+					if (visit2 && visit_cnt) {
+						// fast move to head
+						if (visit_in < visit_out) {
+							for (int i = visit_out; i < size2d; i++)
+								visit_xy[visit_in + i - visit_out] = visit_xy[i];
+						} else if (visit_in < visit_out) {
+							for (int i = visit_out; i < visit_in; i++)
+								visit_xy[i - visit_out] = visit_xy[i];
+						}
+						visit_out = 0;
+						visit_in = visit_cnt % size2d;
+
+						// randomize
+						for (int i = 1; i < visit_cnt; i++) {
+							int j = rand() % (i + 1);
+
+							int swap = visit_xy[i];
+							visit_xy[i] = visit_xy[j];
+							visit_xy[j] = swap;
+						}
+					}
+				}
 			}
 
 			if (verbose == 1) {
-				fprintf(stderr, "level=%d temperature=%g visited=%d changed=%d\n", iLevel, temperature, pixelsVisited, pixelsChanged);
+				fprintf(stderr, "level=%d iRepeat=%d temperature=%g visited=%d changed=%d\n", iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged);
 				pixelsVisited = pixelsChanged = 0;
 			}
 			if (!repeatChanged)
@@ -723,23 +821,6 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		}
 		if (!levelChanged)
 			break;
-	}
-
-	{
-		for (int i_x = 0; i_x < image.get_width(); i_x++) {
-			for (int i_y = 0; i_y < image.get_height(); i_y++) {
-				quantized_image(i_x, i_y) = best_match_color(coarse, i_x, i_y, palette.size());
-			}
-		}
-		for (unsigned int v = 0; v < palette.size(); v++) {
-			for (unsigned int k = 0; k < 3; k++) {
-				if (palette[v](k) > 1.0) palette[v](k) = 1.0;
-				if (palette[v](k) < 0.0) palette[v](k) = 0.0;
-			}
-#ifdef TRACE
-			cout << palette[v] << endl;
-#endif
-		}
 	}
 }
 
@@ -758,6 +839,7 @@ int opt_numLevels = 3;
 int opt_repeatsPerLevel = 1;
 int opt_verbose = 1;
 int opt_seed = 0;
+int opt_visit2 = 0;
 
 void usage(const char *argv0, bool verbose) {
 	fprintf(stderr, "usage: %s [options] <input> <paletteSize> <outputGIF>\n", argv0);
@@ -775,6 +857,7 @@ void usage(const char *argv0, bool verbose) {
 		fprintf(stderr, "\t-v --verbose                Say more\n");
 		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%f]\n", opt_finalTemperature);
 		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%f]\n", opt_initialTemperature);
+		fprintf(stderr, "\t   --visit2                 Randomize visit queue more to remove 'stripes'\n");
 	}
 }
 
@@ -782,7 +865,7 @@ int main(int argc, char *argv[]) {
 	for (;;) {
 		int option_index = 0;
 		enum {
-			LO_INITIALTEMP = 1, LO_FINALTEMP,
+			LO_INITIALTEMP = 1, LO_FINALTEMP, LO_VISIT2,
 			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_REPEATS = 'r', LO_PALETTE = 'p', LO_OPAQUE = 'o', LO_QUIET = 'q'
 		};
 		static struct option long_options[] = {
@@ -799,6 +882,7 @@ int main(int argc, char *argv[]) {
 			{"seed",                1, 0, LO_SEED},
 			{"stddev",              1, 0, LO_STDDEV},
 			{"verbose",             0, 0, LO_VERBOSE},
+			{"visit2",              0, 0, LO_VISIT2},
 			{NULL,                  0, 0, 0}
 		};
 
@@ -856,6 +940,9 @@ int main(int argc, char *argv[]) {
 
 			case LO_VERBOSE:
 				opt_verbose++;
+				break;
+			case LO_VISIT2:
+				opt_visit2++;
 				break;
 			case LO_QUIET:
 				opt_verbose--;
@@ -1144,14 +1231,15 @@ int main(int argc, char *argv[]) {
 	}
 	assert(palette.size() == arg_paletteSize);
 
-	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,repeatsPerLevel:%d,initialTemperature:%g,finalTemperature:%g,stddef=%f,palette=\"%s\"}\n",
+	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,repeatsPerLevel:%d,initialTemperature:%g,finalTemperature:%g,stddef=%f,palette=\"%s\",visit2:%d}\n",
 		arg_inputName,
 		width, height,
 		arg_paletteSize, transparent,
 		opt_seed, opt_filterSize,
 		opt_numLevels, opt_repeatsPerLevel, opt_initialTemperature, opt_finalTemperature,
 		opt_stddev,
-		opt_palette ? opt_palette : ""
+		opt_palette ? opt_palette : "",
+		opt_visit2
 	);
 
 	array3d<double> coarse(width, height, arg_paletteSize);
@@ -1164,8 +1252,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	spatial_color_quant(image, *filters[opt_filterSize], quantized_image, palette, coarse,
-			    opt_initialTemperature, opt_finalTemperature, opt_numLevels, opt_repeatsPerLevel, opt_verbose);
+	spatial_color_quant(image, *filters[opt_filterSize], quantized_image, palette, coarse, enabledPixels,
+			    opt_initialTemperature, opt_finalTemperature, opt_numLevels, opt_repeatsPerLevel, opt_verbose, opt_visit2);
 
 	if (arg_outputName) {
 		FILE *fil = fopen(arg_outputName, "w");
@@ -1194,6 +1282,7 @@ int main(int argc, char *argv[]) {
 				} else {
 					// enabled pixel
 					int c = quantized_image(x, y);
+					assert(c >= 0 && c <= arg_paletteSize);
 
 					gdImageSetPixel(im, x, y, c);
 				}
