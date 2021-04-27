@@ -576,11 +576,14 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			 int numLevels,
 			 int repeatsPerLevel,
 			 int verbose,
-			 int visit2) {
+			 int visit2,
+			 const char *snapshotName) {
 
 	const int width = image.get_width();
 	const int height = image.get_height();
 	const int size2d = width * height;
+	const int filterSize = filter_weights.get_width();
+	const int paletteSize = palette.size();
 
 	// force change detection by invalidating output image
 	for (int y = 0; y < height; y++) {
@@ -590,8 +593,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	}
 
 	// Compute a_i, b_{ij} according to (11)
-	int extended_neighborhood_width = filter_weights.get_width() * 2 - 1;
-	int extended_neighborhood_height = filter_weights.get_height() * 2 - 1;
+	int extended_neighborhood_width = filterSize * 2 - 1;
+	int extended_neighborhood_height = filterSize * 2 - 1;
 	array2d<vector_fixed<double, 3> > b0(extended_neighborhood_width, extended_neighborhood_height);
 	compute_b_array(filter_weights, b0);
 
@@ -618,7 +621,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 
 		// construct new palette for this level
 		if (iLevel > 0) {
-			array2d<vector_fixed<double, 3> > s(palette.size(), palette.size());
+			array2d<vector_fixed<double, 3> > s(paletteSize, paletteSize);
 			compute_initial_s(s, coarse, b0);
 			refine_palette(s, coarse, a0, palette);
 		}
@@ -681,7 +684,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 				vector<double> meanfield_logs, meanfields;
 				double max_meanfield_log = -numeric_limits<double>::infinity();
 				double meanfield_sum = 0.0;
-				for (unsigned int v = 0; v < palette.size(); v++) {
+				for (unsigned int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
@@ -690,7 +693,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					if (meanfield_logs.back() > max_meanfield_log)
 						max_meanfield_log = meanfield_logs.back();
 				}
-				for (unsigned int v = 0; v < palette.size(); v++) {
+				for (unsigned int v = 0; v < paletteSize; v++) {
 					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 100));
 					meanfield_sum += meanfields.back();
 				}
@@ -704,7 +707,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 				double max_weight = -1;
 
 				vector_fixed<double, 3> &j_pal = j_palette_sum(i_x, i_y);
-				for (unsigned int v = 0; v < palette.size(); v++) {
+				for (unsigned int v = 0; v < paletteSize; v++) {
 					double new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
@@ -803,6 +806,85 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 				break;
 		}
 
+		if (snapshotName) {
+			char *fname;
+			asprintf(&fname, snapshotName, iLevel);
+
+			FILE *fil = fopen(fname, "w");
+			if (fil == NULL) {
+				fprintf(stderr, "Could not open opaque file \"%s\"\n", fname);
+				exit(1);
+			}
+
+
+			gdImagePtr im = gdImageCreateTrueColor(width, height);
+
+			for (int i_y = 0; i_y < height; i_y++) {
+				for (int i_x = 0; i_x < width; i_x++) {
+					int yx = i_y * width + i_x;
+
+					if (!(enabledPixels[yx >> 3] & (1 << (yx & 7)))) {
+						// disabled/transparent pixel
+
+						gdImageSetPixel(im, i_x, i_y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
+					} else {
+						// Compute (25) including center pixel
+						vector_fixed<double, 3> p_i;
+						for (int y = 0; y < filterSize; y++) {
+							for (int x = 0; x < filterSize; x++) {
+								int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
+								if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
+
+								p_i += b_value(filter_weights, i_x, i_y, j_x, j_y)(0) * j_palette_sum(j_x, j_y);
+							}
+						}
+
+						p_i *= 2.0; // NOTE: p_i is at half power
+
+						int r = round(p_i(0) * 255);
+						int g = round(p_i(1) * 255);
+						int b = round(p_i(2) * 255);
+
+						gdImageSetPixel(im, i_x, i_y, gdImageColorAllocate(im, r, g, b));
+					}
+				}
+			}
+
+			gdImagePng(im, fil);
+			gdImageDestroy(im);
+			fclose(fil);
+			free(fname);
+		}
+
+		if (verbose >= 3) {
+			static int colourCount[MAXPALETTE];
+			static int lastCount[MAXPALETTE];
+			static vector_fixed<double, 3> lastRGB[MAXPALETTE];
+
+			for (int i = 0; i < paletteSize; i++)
+				colourCount[i] = 0;
+
+			for (int y = 0; y < height; y++) {
+				for (int x = 0; x < width; x++) {
+					int i = quantized_image(x, y);
+					colourCount[i]++;
+				}
+			}
+			for (int i = 0; i < paletteSize; i++) {
+				vector_fixed<double, 3> diff = palette[i] * 255 - lastRGB[i];
+
+				fprintf(stderr, "%3d(%6d): %3d %3d %3d    (%8d) %4d %4d %4d\n",
+					i, colourCount[i],
+					(int) (palette[i](0) * 255), (int) (palette[i](1) * 255), (int) (palette[i](2) * 255),
+					colourCount[i] - lastCount[i],
+					(int) diff(0), (int) diff(1), (int) diff(2)
+				);
+				lastCount[i] = colourCount[i];
+				lastRGB[i] += diff;
+			}
+
+		}
+
 		if (verbose >= 2) {
 			fprintf(stderr, "level=%d temperature=%g visited=%d changed=%d\n", iLevel, temperature, pixelsVisited, pixelsChanged);
 			pixelsVisited = pixelsChanged = 0;
@@ -817,8 +899,9 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 const char *arg_inputName;
 int arg_paletteSize;
 const char *arg_outputName;
-const char *opt_palette = NULL;
-const char *opt_opaque = NULL;
+const char *opt_paletteName = NULL;
+const char *opt_opaqueName = NULL;
+const char *opt_snapshotName = NULL;
 float opt_stddev = 1;
 int opt_filterSize = 3;
 double opt_initialTemperature = 1.0;
@@ -838,10 +921,11 @@ void usage(const char *argv0, bool verbose) {
 		fprintf(stderr, "\t-f --filter=n               Filter 1=1x1, 3=3x3, 5=5x5 [default=%d]\n", opt_filterSize);
 		fprintf(stderr, "\t-h --help                   This list\n");
 		fprintf(stderr, "\t-l --levels=n               Number of levels [default=%d]\n", opt_numLevels);
-		fprintf(stderr, "\t-o --opaque=file            Additional opaque oytput [default=%s]\n", opt_opaque ? opt_opaque : "");
-		fprintf(stderr, "\t-p --palette=file           Fixed palette [default=%s]\n", opt_palette ? opt_palette : "");
+		fprintf(stderr, "\t-o --opaque=file            Additional opaque oytput [default=%s]\n", opt_opaqueName ? opt_opaqueName : "");
+		fprintf(stderr, "\t-p --palette=file           Fixed palette [default=%s]\n", opt_paletteName ? opt_paletteName : "");
 		fprintf(stderr, "\t-q --quiet                  Say less\n");
 		fprintf(stderr, "\t-r --repeats=n              Number of repeats per level [default=%d]\n", opt_numLevels);
+		fprintf(stderr, "\t   --snapshot=file          Internal snapshots filename template [default=%s]\n", opt_snapshotName ? opt_snapshotName : "");
 		fprintf(stderr, "\t-v --verbose                Say more\n");
 		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%f]\n", opt_finalTemperature);
 		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%f]\n", opt_initialTemperature);
@@ -853,7 +937,7 @@ int main(int argc, char *argv[]) {
 	for (;;) {
 		int option_index = 0;
 		enum {
-			LO_INITIALTEMP = 1, LO_FINALTEMP, LO_VISIT2,
+			LO_INITIALTEMP = 1, LO_FINALTEMP, LO_VISIT2, LO_SNAPSHOT,
 			LO_HELP = 'h', LO_VERBOSE = 'v', LO_STDDEV = 'd', LO_SEED = 's', LO_FILTER = 'f', LO_LEVELS = 'l', LO_REPEATS = 'r', LO_PALETTE = 'p', LO_OPAQUE = 'o', LO_QUIET = 'q'
 		};
 		static struct option long_options[] = {
@@ -868,6 +952,7 @@ int main(int argc, char *argv[]) {
 			{"quiet",               0, 0, LO_QUIET},
 			{"repeats",             1, 0, LO_REPEATS},
 			{"seed",                1, 0, LO_SEED},
+			{"snapshot",            1, 0, LO_SNAPSHOT},
 			{"stddev",              1, 0, LO_STDDEV},
 			{"verbose",             0, 0, LO_VERBOSE},
 			{"visit2",              0, 0, LO_VISIT2},
@@ -910,10 +995,13 @@ int main(int argc, char *argv[]) {
 				opt_repeatsPerLevel = strtol(optarg, NULL, 10);
 				break;
 			case LO_PALETTE:
-				opt_palette = optarg;
+				opt_paletteName = optarg;
 				break;
 			case LO_OPAQUE:
-				opt_opaque = optarg;
+				opt_opaqueName = optarg;
+				break;
+			case LO_SNAPSHOT:
+				opt_snapshotName = optarg;
 				break;
 			case LO_SEED:
 				opt_seed = strtol(optarg, NULL, 10);
@@ -1125,7 +1213,7 @@ int main(int argc, char *argv[]) {
 	/*
 	 * construct initial palette
 	 */
-	if (!opt_palette) {
+	if (!opt_paletteName) {
 		/*
 		 * Octree palette
 		 */
@@ -1151,7 +1239,7 @@ int main(int argc, char *argv[]) {
 			palette.push_back(v);
 		}
 
-	} else if (strcmp(opt_palette, "random") == 0) {
+	} else if (strcmp(opt_paletteName, "random") == 0) {
 		/*
 		 * Random palette
 		 */
@@ -1168,9 +1256,9 @@ int main(int argc, char *argv[]) {
 		/*
 		 * Load palette from file
 		 */
-		FILE *in = fopen(opt_palette, "r");
+		FILE *in = fopen(opt_paletteName, "r");
 		if (in == NULL) {
-			fprintf(stderr, "Could not open palette \"%s\"\n", opt_palette);
+			fprintf(stderr, "Could not open palette \"%s\"\n", opt_paletteName);
 			exit(1);
 		}
 
@@ -1179,7 +1267,7 @@ int main(int argc, char *argv[]) {
 		float r, g, b;
 		while (fscanf(in, "%f %f %f\n", &r, &g, &b) == 3) {
 			if (arg_paletteSize >= MAXPALETTE) {
-				fprintf(stderr, "too many colours in palette \"%s\"\n", opt_palette);
+				fprintf(stderr, "too many colours in palette \"%s\"\n", opt_paletteName);
 				exit(1);
 			}
 
@@ -1226,7 +1314,7 @@ int main(int argc, char *argv[]) {
 		opt_seed, opt_filterSize,
 		opt_numLevels, opt_repeatsPerLevel, opt_initialTemperature, opt_finalTemperature,
 		opt_stddev,
-		opt_palette ? opt_palette : "",
+		opt_paletteName ? opt_paletteName : "",
 		opt_visit2
 	);
 
@@ -1241,7 +1329,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	spatial_color_quant(image, *filters[opt_filterSize], quantized_image, palette, coarse, enabledPixels,
-			    opt_initialTemperature, opt_finalTemperature, opt_numLevels, opt_repeatsPerLevel, opt_verbose, opt_visit2);
+			    opt_initialTemperature, opt_finalTemperature, opt_numLevels, opt_repeatsPerLevel,
+			    opt_verbose, opt_visit2, opt_snapshotName);
 
 	if (arg_outputName) {
 		FILE *fil = fopen(arg_outputName, "w");
@@ -1282,10 +1371,10 @@ int main(int argc, char *argv[]) {
 		fclose(fil);
 	}
 
-	if (opt_opaque) {
-		FILE *fil = fopen(opt_opaque, "w");
+	if (opt_opaqueName) {
+		FILE *fil = fopen(opt_opaqueName, "w");
 		if (fil == NULL) {
-			fprintf(stderr, "Could not open opaque file \"%s\"\n", opt_opaque);
+			fprintf(stderr, "Could not open opaque file \"%s\"\n", opt_opaqueName);
 			exit(1);
 		}
 
