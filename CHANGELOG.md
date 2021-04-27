@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-27 21:12:52 Fixed: Use `quantized_image` to detect changes and revisit pixels.
 2021-04-24 23:40:58 Changed: Redesigned for loops.
 2021-04-27 20:57:11 Fixed: Relocate palette construction to start of level loop.
 2021-04-27 17:26:05 Removed: Coarse levels/zooming, possible because of octree palette prediction.
