@@ -373,31 +373,6 @@ ostream &operator<<(ostream &out, array3d<T> &a) {
 	return out;
 }
 
-void compute_b_array(array2d<double> &weights,
-		     array2d<double> &b) {
-	// Assume that the pixel i is always located at the center of b,
-	// and vary pixel j's location through each location in b.
-	int radius_width = (weights.get_width() - 1) / 2,
-		radius_height = (weights.get_height() - 1) / 2;
-	int offset_x = (b.get_width() - 1) / 2 - radius_width;
-	int offset_y = (b.get_height() - 1) / 2 - radius_height;
-	for (int j_y = 0; j_y < b.get_height(); j_y++) {
-		for (int j_x = 0; j_x < b.get_width(); j_x++) {
-			b(j_x, j_y) = 0;
-			for (int k_y = 0; k_y < weights.get_height(); k_y++) {
-				for (int k_x = 0; k_x < weights.get_width(); k_x++) {
-					if (k_x + offset_x >= j_x - radius_width &&
-					    k_x + offset_x <= j_x + radius_width &&
-					    k_y + offset_y >= j_y - radius_width &&
-					    k_y + offset_y <= j_y + radius_width) {
-						b(j_x, j_y) += weights(k_x, k_y) * weights(k_x + offset_x - j_x + radius_width, k_y + offset_y - j_y + radius_height);
-					}
-				}
-			}
-		}
-	}
-}
-
 double b_value(array2d<double> &b, int i_x, int i_y, int j_x, int j_y) {
 	int radius_width = (b.get_width() - 1) / 2,
 		radius_height = (b.get_height() - 1) / 2;
@@ -443,14 +418,14 @@ vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 
 void compute_initial_s(array2d<double> &s,
 		       array3d<double> &coarse,
-		       array2d<double> &b) {
+		       array2d<double> &weights) {
 	int paletteSize = s.get_width();
 	int width = coarse.get_width();
 	int height = coarse.get_height();
-	int filterSize = b.get_width();
+	int filterSize = weights.get_width();
 
-	int center_x = (b.get_width() - 1) / 2, center_y = (b.get_height() - 1) / 2;
-	double center_b = b_value(b, 0, 0, 0, 0);
+	int center_x = (filterSize - 1) / 2, center_y = (filterSize - 1) / 2;
+	double center_b = b_value(weights, 0, 0, 0, 0);
 
 	for (int v = 0; v < paletteSize; v++) {
 		for (int alpha = v; alpha < paletteSize; alpha++)
@@ -463,7 +438,7 @@ void compute_initial_s(array2d<double> &s,
 			for (int j_y = max(0, i_y - center_y); j_y < max_j_y; j_y++) {
 				for (int j_x = max(0, i_x - center_x); j_x < max_j_x; j_x++) {
 					if (i_x == j_x && i_y == j_y) continue;
-					double b_ij = b_value(b, i_x, i_y, j_x, j_y);
+					double b_ij = b_value(weights, i_x, i_y, j_x, j_y);
 					for (int v = 0; v < paletteSize; v++) {
 						for (int alpha = v; alpha < paletteSize; alpha++)
 							s(v, alpha) += b_ij * coarse(i_x, i_y, v) * coarse(j_x, j_y, alpha);
@@ -566,12 +541,12 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
 		int levelChanged = 0;
 
-		double middle_b = b_value(b0, 0, 0, 0, 0);
+		double middle_b = b_value(weights, 0, 0, 0, 0);
 
 		// construct new palette for this level
 		if (iLevel > 0) {
 			array2d<double> s(paletteSize, paletteSize);
-			compute_initial_s(s, coarse, b0);
+			compute_initial_s(s, coarse, weights);
 			refine_palette(s, coarse, a0, palette);
 		}
 		/*
@@ -586,7 +561,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			}
 		}
 
-		int center_x = (b0.get_width() - 1) / 2, center_y = (b0.get_height() - 1) / 2;
+		int center_x = (filterSize - 1) / 2, center_y = (filterSize - 1) / 2;
 		for (int iRepeat = 0; iRepeat < repeatsPerLevel; iRepeat++) {
 			int repeatChanged = 0;
 
@@ -634,12 +609,12 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 
 				// Compute (25)
 				vector_fixed<double, 3> p_i;
-				for (int y = 0; y < b0.get_height(); y++) {
-					for (int x = 0; x < b0.get_width(); x++) {
+				for (int y = 0; y < filterSize; y++) {
+					for (int x = 0; x < filterSize; x++) {
 						int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 						if (i_x == j_x && i_y == j_y) continue;
 						if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
-						p_i += b_value(b0, i_x, i_y, j_x, j_y) * j_palette_sum(j_x, j_y);
+						p_i += b_value(weights, i_x, i_y, j_x, j_y) * j_palette_sum(j_x, j_y);
 					}
 				}
 				p_i *= 2.0;
@@ -678,9 +653,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					if (new_val >= 1) new_val = 1 - 1e-10;
 
 					double delta_m_iv = new_val - coarse(i_x, i_y, v);
-					j_pal(0) += delta_m_iv * palette[v](0);
-					j_pal(1) += delta_m_iv * palette[v](1);
-					j_pal(2) += delta_m_iv * palette[v](2);
+					j_pal += delta_m_iv * palette[v];
 
 					coarse(i_x, i_y, v) = new_val;
 
@@ -704,8 +677,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					// there isn't much weight there, and if it does need
 					// to be visited, it'll probably be added when we visit
 					// neighboring pixels.
-					for (int y = min(1, center_y - 1); y < max(b0.get_height() - 1, center_y + 1); y++) {
-						for (int x = min(1, center_x - 1); x < max(b0.get_width() - 1, center_x + 1); x++) {
+					for (int y = min(1, center_y - 1); y < max(filterSize - 1, center_y + 1); y++) {
+						for (int x = min(1, center_x - 1); x < max(filterSize - 1, center_x + 1); x++) {
 							int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
 							if (j_x < 0 || j_y < 0 || j_x >= width || j_y >= height) continue;
 
@@ -1034,11 +1007,8 @@ int main(int argc, char *argv[]) {
 
 	double sum = 0.0;
 	for (int i = 0; i < 3; i++) {
-		for (int j = 0; j < 3; j++) {
-			double w = exp(-sqrt((i - 1) * (i - 1) + (j - 1) * (j - 1)) / (opt_stddev * opt_stddev));
-			sum += w;
-			filter3_weights(i, j) = w;
-		}
+		for (int j = 0; j < 3; j++)
+			sum += filter3_weights(i, j) = exp(-sqrt((i - 1) * (i - 1) + (j - 1) * (j - 1)) / (opt_stddev * opt_stddev));
 	}
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++) {
@@ -1047,9 +1017,8 @@ int main(int argc, char *argv[]) {
 	}
 	if (opt_verbose) {
 		for (int i = 0; i < 3; i++) {
-			for (int j = 0; j < 3; j++) {
+			for (int j = 0; j < 3; j++)
 				printf("%5.2f ", filter3_weights(i, j) / filter3_weights(0, 0));
-			}
 			printf("\n");
 		}
 		printf("\n");
@@ -1058,23 +1027,18 @@ int main(int argc, char *argv[]) {
 	sum = 0.0;
 	int coef5[] = {1, 4, 6, 4, 1};
 	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 5; j++) {
-			double w = exp(-sqrt((i - 2) * (i - 2) + (j - 2) * (j - 2)) / (opt_stddev * opt_stddev));
-			sum += w;
-			filter5_weights(i, j) = w;
-		}
+		for (int j = 0; j < 5; j++)
+			sum += filter5_weights(i, j) = exp(-sqrt((i - 2) * (i - 2) + (j - 2) * (j - 2)) / (opt_stddev * opt_stddev));
 	}
 	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 5; j++) {
+		for (int j = 0; j < 5; j++)
 			filter5_weights(i, j) /= sum;
-		}
 	}
 
 	if (opt_verbose) {
 		for (int i = 0; i < 5; i++) {
-			for (int j = 0; j < 5; j++) {
+			for (int j = 0; j < 5; j++)
 				printf("%5.2f ", filter5_weights(i, j) / filter5_weights(0, 0));
-			}
 			printf("\n");
 		}
 		printf("\n");

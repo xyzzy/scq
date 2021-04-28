@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-25 00:07:34 Changed: Replaced `b0` and with `weights`. `b0` is double sized blur of weights.
 2021-04-28 15:30:49 Fixed: Randomize visit queue. 
 ```
 
