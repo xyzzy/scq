@@ -606,6 +606,15 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 			visit_in = visit_cnt % size2d; // next position to add to queue
 			visit_tick = visit_cnt; // when to generate next log message
 
+			// randomize
+			for (int i = 1; i < visit_cnt; i++) {
+				int j = rand() % (i + 1);
+
+				int swap = visit_xy[i];
+				visit_xy[i] = visit_xy[j];
+				visit_xy[j] = swap;
+			}
+
 			// Compute 2*sum(j in extended neighborhood of i, j != i) b_ij
 
 			int maxLoop = 100; // in case when stuck in local minimum
@@ -857,12 +866,12 @@ const char *arg_outputName;
 const char *opt_paletteName = NULL;
 const char *opt_opaqueName = NULL;
 const char *opt_snapshotName = NULL;
-float opt_stddev = 1;
+float opt_stddev = 1.0;
 int opt_filterSize = 3;
-double opt_initialTemperature = 1.0;
-double opt_finalTemperature = .001;
-int opt_numLevels = 3;
-int opt_repeatsPerLevel = 1;
+double opt_initialTemperature = 1e-5;
+double opt_finalTemperature = 1e-100;
+int opt_numLevels = 30;
+int opt_repeatsPerLevel = 4;
 int opt_verbose = 1;
 int opt_seed = 0;
 int opt_visit2 = 0;
@@ -882,8 +891,8 @@ void usage(const char *argv0, bool verbose) {
 		fprintf(stderr, "\t-r --repeats=n              Number of repeats per level [default=%d]\n", opt_numLevels);
 		fprintf(stderr, "\t   --snapshot=file          Internal snapshots filename template [default=%s]\n", opt_snapshotName ? opt_snapshotName : "");
 		fprintf(stderr, "\t-v --verbose                Say more\n");
-		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%f]\n", opt_finalTemperature);
-		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%f]\n", opt_initialTemperature);
+		fprintf(stderr, "\t   --final-temperature=n    Set final temperature [default=%g]\n", opt_finalTemperature);
+		fprintf(stderr, "\t   --initial-temperature=n  Set initial temperature [default=%g]\n", opt_initialTemperature);
 		fprintf(stderr, "\t   --visit2                 Randomize visit queue more to remove 'stripes'\n");
 	}
 }
@@ -1252,24 +1261,26 @@ int main(int argc, char *argv[]) {
 	}
 	assert(palette.size() == arg_paletteSize);
 
-	fprintf(stderr, "{srcName:\"%s\",width:%d,height:%d,paletteSize:%d,transparent:%d,seed:%d,filter:%d,numLevels:%d,repeatsPerLevel:%d,initialTemperature:%g,finalTemperature:%g,stddef=%f,palette=\"%s\",visit2:%d}\n",
-		arg_inputName,
-		width, height,
-		arg_paletteSize, transparent,
-		opt_seed, opt_filterSize,
-		opt_numLevels, opt_repeatsPerLevel, opt_initialTemperature, opt_finalTemperature,
-		opt_stddev,
-		opt_paletteName ? opt_paletteName : "",
-		opt_visit2
+	char *pJson;
+	asprintf(&pJson, "{\"srcName\":\"%s\",\"width\":%d,\"height\":%d,\"paletteSize\":%d,\"transparent\":%d,\"seed\":%d,\"filter\":%d,\"numLevels\":%d,\"repeatsPerLevel\":%d,\"initialTemperature\":%g,\"finalTemperature\":%g,\"stddef\":%f,\"palette\":\"%s\",\"visit2\":%d}\n",
+		 arg_inputName,
+		 width, height,
+		 arg_paletteSize, transparent,
+		 opt_seed, opt_filterSize,
+		 opt_numLevels, opt_repeatsPerLevel, opt_initialTemperature, opt_finalTemperature,
+		 opt_stddev,
+		 opt_paletteName ? opt_paletteName : "",
+		 opt_visit2
 	);
+	fprintf(stderr,"%s", pJson);
 
 	array3d<double> coarse(width, height, arg_paletteSize);
 
 	// with octree, no need to randomize coarse
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
+	for (int i = 0; i < width; i++) {
+		for (int j = 0; j < height; j++) {
 			for (int k = 0; k < arg_paletteSize; k++)
-				coarse(x, y, k) = 1.0 / arg_paletteSize;
+				coarse(i, j, k) = 1.0 / arg_paletteSize;
 		}
 	}
 
@@ -1313,6 +1324,17 @@ int main(int argc, char *argv[]) {
 
 		gdImageGif(im, fil);
 		gdImageDestroy(im);
+		fclose(fil);
+
+		char *fname;
+		asprintf(&fname, "%s.json", arg_outputName);
+		fil = fopen(fname, "w");
+		if (fil == NULL) {
+			fprintf(stderr, "Could not open output file \"%s\"\n", fname);
+			exit(1);
+		}
+		fprintf(fil, "%s", pJson);
+
 		fclose(fil);
 	}
 

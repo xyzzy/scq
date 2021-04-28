@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+```
+2021-04-28 15:30:49 Fixed: Randomize visit queue. 
+```
+
 ## 2021-04-27 23:05:32 [Version 0.3.0]
 
 ```
