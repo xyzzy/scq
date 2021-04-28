@@ -384,29 +384,6 @@ double b_value(array2d<double> &b, int i_x, int i_y, int j_x, int j_y) {
 		return 0.0;
 }
 
-void compute_a_image(array2d<vector_fixed<double, 3> > &image,
-		     array2d<double> &b,
-		     array2d<vector_fixed<double, 3> > &a) {
-	int radius_width = (b.get_width() - 1) / 2,
-		radius_height = (b.get_height() - 1) / 2;
-	for (int i_y = 0; i_y < a.get_height(); i_y++) {
-		for (int i_x = 0; i_x < a.get_width(); i_x++) {
-			for (int j_y = i_y - radius_height; j_y <= i_y + radius_height; j_y++) {
-				if (j_y < 0) j_y = 0;
-				if (j_y >= a.get_height()) break;
-
-				for (int j_x = i_x - radius_width; j_x <= i_x + radius_width; j_x++) {
-					if (j_x < 0) j_x = 0;
-					if (j_x >= a.get_width()) break;
-
-					a(i_x, i_y) += b_value(b, i_x, i_y, j_x, j_y) * image(j_x, j_y);
-				}
-			}
-			a(i_x, i_y) *= -2.0;
-		}
-	}
-}
-
 template<typename T, int length>
 vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	vector<T> result;
@@ -453,8 +430,10 @@ void compute_initial_s(array2d<double> &s,
 
 void refine_palette(array2d<double> &s,
 		    array3d<double> &coarse,
-		    array2d<vector_fixed<double, 3> > &a,
+		    array2d<vector_fixed<double, 3> > &image,
 		    vector<vector_fixed<double, 3> > &palette) {
+	int paletteSize = palette.size();
+
 	// We only computed the half of S above the diagonal - reflect it
 	for (int v = 0; v < s.get_width(); v++) {
 		for (int alpha = 0; alpha < v; alpha++) {
@@ -462,11 +441,11 @@ void refine_palette(array2d<double> &s,
 		}
 	}
 
-	vector<vector_fixed<double, 3> > r(palette.size());
-	for (unsigned int v = 0; v < palette.size(); v++) {
+	vector<vector_fixed<double, 3> > r(paletteSize);
+	for (unsigned int v = 0; v < paletteSize; v++) {
 		for (int i_y = 0; i_y < coarse.get_height(); i_y++) {
 			for (int i_x = 0; i_x < coarse.get_width(); i_x++) {
-				r[v] += coarse(i_x, i_y, v) * a(i_x, i_y);
+				r[v] += coarse(i_x, i_y, v) * image(i_x, i_y);
 			}
 		}
 	}
@@ -474,19 +453,13 @@ void refine_palette(array2d<double> &s,
 	for (unsigned int k = 0; k < 3; k++) {
 		vector<double> R_k = extract_vector_layer_1d(r, k);
 		vector<double> palette_channel = -1.0 * ((2.0 * s).matrix_inverse()) * R_k;
-		for (unsigned int v = 0; v < palette.size(); v++) {
+		for (unsigned int v = 0; v < paletteSize; v++) {
 			double val = palette_channel[v];
 			if (val < 0) val = 0;
 			if (val > 1) val = 1;
 			palette[v](k) = val;
 		}
 	}
-
-#if TRACE
-	for (unsigned int v=0; v<palette.size(); v++) {
-	    cout << palette[v] << endl;
-	}
-#endif
 }
 
 void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
@@ -516,14 +489,12 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		}
 	}
 
-	// Compute a_i, b_{ij} according to (11)
-	int extended_neighborhood_width = filterSize * 2 - 1;
-	int extended_neighborhood_height = filterSize * 2 - 1;
-	array2d<double> b0(extended_neighborhood_width, extended_neighborhood_height);
-	compute_b_array(weights, b0);
-
-	array2d<vector_fixed<double, 3> > a0(width, height);
-	compute_a_image(image, b0, a0);
+	// `a0` was blurred `image * -2.0`
+	for (int x = 0; x < width; x++) {
+		for (int y = 0; y < height; y++) {
+			image(x, y) *= -2.0;
+		}
+	}
 
 	double temperature = initial_temperature;
 	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
@@ -547,15 +518,14 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		if (iLevel > 0) {
 			array2d<double> s(paletteSize, paletteSize);
 			compute_initial_s(s, coarse, weights);
-			refine_palette(s, coarse, a0, palette);
+			refine_palette(s, coarse, image, palette);
 		}
-		/*
-		 * compute_initial_j_palette_sum
-		 */
+
+		// compute_initial_j_palette_sum
 		for (int j_y = 0; j_y < height; j_y++) {
 			for (int j_x = 0; j_x < width; j_x++) {
 				vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
-				for (unsigned int alpha = 0; alpha < palette.size(); alpha++)
+				for (unsigned int alpha = 0; alpha < paletteSize; alpha++)
 					palette_sum += coarse(j_x, j_y, alpha) * palette[alpha];
 				j_palette_sum(j_x, j_y) = palette_sum;
 			}
@@ -618,7 +588,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					}
 				}
 				p_i *= 2.0;
-				p_i += a0(i_x, i_y);
+				p_i += image(i_x, i_y);
 
 				vector<double> meanfield_logs, meanfields;
 				double max_meanfield_log = -numeric_limits<double>::infinity();
@@ -776,7 +746,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 							}
 						}
 
-						p_i *= 2.0; // NOTE: p_i is at half power
+// no longer needed when b0=weights
+//						p_i *= 2.0; // NOTE: p_i is at half power
 
 						int r = round(p_i(0) * 255);
 						int g = round(p_i(1) * 255);
