@@ -487,7 +487,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 	// force change detection by invalidating output image
 	for (int x = 0; x < width; x++) {
 		for (int y = 0; y < height; y++) {
-			quantized_image(x, y) = -1;
+			quantized_image(x, y) = paletteSize;
 		}
 	}
 
@@ -700,7 +700,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 				}
 			}
 
-			if (verbose == 1) {
+			if (verbose >= 2) {
 				fprintf(stderr, "level=%d iRepeat=%d temperature=%g visited=%d changed=%d\n", iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged);
 				pixelsVisited = pixelsChanged = 0;
 			}
@@ -788,7 +788,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 
 		}
 
-		if (verbose >= 2) {
+		if (verbose == 1) {
 			fprintf(stderr, "level=%d temperature=%g visited=%d changed=%d\n", iLevel, temperature, pixelsVisited, pixelsChanged);
 			pixelsVisited = pixelsChanged = 0;
 		}
@@ -1051,7 +1051,6 @@ int main(int argc, char *argv[]) {
 	uint8_t enabledPixels[((width * height) >> 3) + 1];
 	memset(enabledPixels, 0, ((width * height) >> 3) + 1);
 
-	int numColours = arg_paletteSize;
 	int transparent = -1;
 
 	/*
@@ -1074,8 +1073,8 @@ int main(int argc, char *argv[]) {
 				image(x, y)(2) = 0.5;
 
 				if (transparent < 0) {
-					// remove a colour for use as transparency
-					transparent = --numColours;
+					// use first free colour for
+					transparent = arg_paletteSize;
 				}
 
 			} else {
@@ -1103,7 +1102,7 @@ int main(int argc, char *argv[]) {
 		 */
 
 		// merge colours until final palette count (heap contains empty root node)
-		while (nodeHeap.count - 1 > numColours)
+		while (nodeHeap.count - 1 > arg_paletteSize)
 			nodeFold(heapPop(&nodeHeap));
 
 		// inject colours into palette
@@ -1128,7 +1127,7 @@ int main(int argc, char *argv[]) {
 		 * Random palette
 		 */
 
-		for (int i = 0; i < numColours; i++) {
+		for (int i = 0; i < arg_paletteSize; i++) {
 			vector_fixed<float, 3> v;
 			v(0) = ((float) rand()) / RAND_MAX;
 			v(1) = ((float) rand()) / RAND_MAX;
@@ -1146,7 +1145,7 @@ int main(int argc, char *argv[]) {
 			exit(1);
 		}
 
-		numColours = 0;
+		arg_paletteSize = 0;
 
 		float r, g, b;
 		while (fscanf(in, "%f %f %f\n", &r, &g, &b) == 3) {
@@ -1170,26 +1169,11 @@ int main(int argc, char *argv[]) {
 			v(2) = b;
 			palette.push_back(v);
 
-			numColours++;
+			arg_paletteSize++;
 		}
 
-		arg_paletteSize = numColours;
-		if (transparent >= 0) {
-			transparent = arg_paletteSize++;
-
-			fclose(in);
-		}
+		fclose(in);
 	}
-
-	// for transparency, add extra colour
-	if (transparent >= 0) {
-		vector_fixed<float, 3> v;
-		v(0) = 126 / 255.0;
-		v(1) = 127 / 255.0;
-		v(2) = 128 / 255.0;
-		palette.push_back(v);
-	}
-	assert(palette.size() == arg_paletteSize);
 
 	char *pJson;
 	asprintf(&pJson, "{\"srcName\":\"%s\",\"width\":%d,\"height\":%d,\"paletteSize\":%d,\"transparent\":%d,\"seed\":%d,\"filter\":%d,\"numLevels\":%d,\"repeatsPerLevel\":%d,\"initialTemperature\":%g,\"finalTemperature\":%g,\"stddef\":%f,\"palette\":\"%s\",\"visit2\":%d}\n",
@@ -1202,7 +1186,9 @@ int main(int argc, char *argv[]) {
 		 opt_paletteName ? opt_paletteName : "",
 		 opt_visit2
 	);
-	fprintf(stderr,"%s", pJson);
+	fprintf(stderr, "%s", pJson);
+
+	assert(palette.size() == arg_paletteSize);
 
 	array3d<float> coarse(width, height, arg_paletteSize);
 
@@ -1232,8 +1218,18 @@ int main(int argc, char *argv[]) {
 			int ix = gdImageColorAllocate(im, palette[i](0) * 255, palette[i](1) * 255, palette[i](2) * 255);
 			assert(ix == i);
 		}
-		if (transparent >= 0)
+		if (transparent >= 0) {
+			// for transparency, add extra colour
+			int ix = gdImageColorAllocateAlpha(im, 126, 127, 128, 0x7f); // 0=opaque 0x7f=transparent
+			assert(ix == transparent);
+			assert(ix == arg_paletteSize);
 			gdImageColorTransparent(im, transparent);
+
+			palette[arg_paletteSize](0) = 126/255.0;
+			palette[arg_paletteSize](1) = 127/255.0;
+			palette[arg_paletteSize](2) = 128/255.0;
+			arg_paletteSize++;
+		}
 
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
@@ -1305,7 +1301,10 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (1) {
-		static int colourCount[256];
+		static int colourCount[MAXPALETTE];
+
+		for (int i = 0; i < arg_paletteSize; i++)
+			colourCount[i] = 0;
 
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {

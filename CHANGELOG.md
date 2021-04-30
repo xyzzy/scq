@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-30 11:04:08 Changed: Better transparency handling.
 2021-04-30 10:55:55 Changed: Replaced `double` with `float`.
 2021-04-30 10:42:13 Changed: Normalize `image` by scaling with -0.5.  
 2021-04-28 15:39:07 Changed: Replaced `a0` with `image`. `a0` is -2.0 of image.
