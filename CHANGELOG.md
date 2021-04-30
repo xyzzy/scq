@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-30 10:42:13 Changed: Normalize `image` by scaling with -0.5.  
 2021-04-28 15:39:07 Changed: Replaced `a0` with `image`. `a0` is -2.0 of image.
 2021-04-25 00:07:34 Changed: Replaced `b0` with `weights`. `b0` is double sized blur of weights.
 2021-04-28 15:30:49 Fixed: Randomize visit queue. 

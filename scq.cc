@@ -450,9 +450,11 @@ void refine_palette(array2d<double> &s,
 		}
 	}
 
+	array2d<double> sInv = s.matrix_inverse();
+
 	for (unsigned int k = 0; k < 3; k++) {
 		vector<double> R_k = extract_vector_layer_1d(r, k);
-		vector<double> palette_channel = -1.0 * ((2.0 * s).matrix_inverse()) * R_k;
+		vector<double> palette_channel = sInv * R_k;
 		for (unsigned int v = 0; v < paletteSize; v++) {
 			double val = palette_channel[v];
 			if (val < 0) val = 0;
@@ -486,13 +488,6 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	for (int x = 0; x < width; x++) {
 		for (int y = 0; y < height; y++) {
 			quantized_image(x, y) = -1;
-		}
-	}
-
-	// `a0` was blurred `image * -2.0`
-	for (int x = 0; x < width; x++) {
-		for (int y = 0; y < height; y++) {
-			image(x, y) *= -2.0;
 		}
 	}
 
@@ -587,8 +582,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 						p_i += b_value(weights, i_x, i_y, j_x, j_y) * j_palette_sum(j_x, j_y);
 					}
 				}
+				p_i -= image(i_x, i_y);
 				p_i *= 2.0;
-				p_i += image(i_x, i_y);
 
 				vector<double> meanfield_logs, meanfields;
 				double max_meanfield_log = -numeric_limits<double>::infinity();
