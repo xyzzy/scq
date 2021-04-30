@@ -106,7 +106,7 @@ public:
 		return result;
 	}
 
-	double dot_product(vector_fixed<T, length> rhs) {
+	float dot_product(vector_fixed<T, length> rhs) {
 		T result = 0;
 		for (int i = 0; i < length; i++) {
 			result += (*this)(i) * rhs(i);
@@ -232,14 +232,14 @@ public:
 		return result;
 	}
 
-	array2d<T> &multiply_row_scalar(int row, double mult) {
+	array2d<T> &multiply_row_scalar(int row, float mult) {
 		for (int i = 0; i < get_width(); i++) {
 			(*this)(i, row) *= mult;
 		}
 		return *this;
 	}
 
-	array2d<T> &add_row_multiple(int from_row, int to_row, double mult) {
+	array2d<T> &add_row_multiple(int from_row, int to_row, float mult) {
 		for (int i = 0; i < get_width(); i++) {
 			(*this)(i, to_row) += mult * (*this)(i, from_row);
 		}
@@ -373,7 +373,7 @@ ostream &operator<<(ostream &out, array3d<T> &a) {
 	return out;
 }
 
-double b_value(array2d<double> &b, int i_x, int i_y, int j_x, int j_y) {
+float b_value(array2d<float> &b, int i_x, int i_y, int j_x, int j_y) {
 	int radius_width = (b.get_width() - 1) / 2,
 		radius_height = (b.get_height() - 1) / 2;
 	int k_x = j_x - i_x + radius_width;
@@ -393,16 +393,16 @@ vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	return result;
 }
 
-void compute_initial_s(array2d<double> &s,
-		       array3d<double> &coarse,
-		       array2d<double> &weights) {
+void compute_initial_s(array2d<float> &s,
+		       array3d<float> &coarse,
+		       array2d<float> &weights) {
 	int paletteSize = s.get_width();
 	int width = coarse.get_width();
 	int height = coarse.get_height();
 	int filterSize = weights.get_width();
 
 	int center_x = (filterSize - 1) / 2, center_y = (filterSize - 1) / 2;
-	double center_b = b_value(weights, 0, 0, 0, 0);
+	float center_b = b_value(weights, 0, 0, 0, 0);
 
 	for (int v = 0; v < paletteSize; v++) {
 		for (int alpha = v; alpha < paletteSize; alpha++)
@@ -415,7 +415,7 @@ void compute_initial_s(array2d<double> &s,
 			for (int j_y = max(0, i_y - center_y); j_y < max_j_y; j_y++) {
 				for (int j_x = max(0, i_x - center_x); j_x < max_j_x; j_x++) {
 					if (i_x == j_x && i_y == j_y) continue;
-					double b_ij = b_value(weights, i_x, i_y, j_x, j_y);
+					float b_ij = b_value(weights, i_x, i_y, j_x, j_y);
 					for (int v = 0; v < paletteSize; v++) {
 						for (int alpha = v; alpha < paletteSize; alpha++)
 							s(v, alpha) += b_ij * coarse(i_x, i_y, v) * coarse(j_x, j_y, alpha);
@@ -428,10 +428,10 @@ void compute_initial_s(array2d<double> &s,
 	}
 }
 
-void refine_palette(array2d<double> &s,
-		    array3d<double> &coarse,
-		    array2d<vector_fixed<double, 3> > &image,
-		    vector<vector_fixed<double, 3> > &palette) {
+void refine_palette(array2d<float> &s,
+		    array3d<float> &coarse,
+		    array2d<vector_fixed<float, 3> > &image,
+		    vector<vector_fixed<float, 3> > &palette) {
 	int paletteSize = palette.size();
 
 	// We only computed the half of S above the diagonal - reflect it
@@ -441,7 +441,7 @@ void refine_palette(array2d<double> &s,
 		}
 	}
 
-	vector<vector_fixed<double, 3> > r(paletteSize);
+	vector<vector_fixed<float, 3> > r(paletteSize);
 	for (unsigned int v = 0; v < paletteSize; v++) {
 		for (int i_y = 0; i_y < coarse.get_height(); i_y++) {
 			for (int i_x = 0; i_x < coarse.get_width(); i_x++) {
@@ -450,13 +450,13 @@ void refine_palette(array2d<double> &s,
 		}
 	}
 
-	array2d<double> sInv = s.matrix_inverse();
+	array2d<float> sInv = s.matrix_inverse();
 
 	for (unsigned int k = 0; k < 3; k++) {
-		vector<double> R_k = extract_vector_layer_1d(r, k);
-		vector<double> palette_channel = sInv * R_k;
+		vector<float> R_k = extract_vector_layer_1d(r, k);
+		vector<float> palette_channel = sInv * R_k;
 		for (unsigned int v = 0; v < paletteSize; v++) {
-			double val = palette_channel[v];
+			float val = palette_channel[v];
 			if (val < 0) val = 0;
 			if (val > 1) val = 1;
 			palette[v](k) = val;
@@ -464,14 +464,14 @@ void refine_palette(array2d<double> &s,
 	}
 }
 
-void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
-			 array2d<double> &weights,
+void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
+			 array2d<float> &weights,
 			 array2d<int> &quantized_image,
-			 vector<vector_fixed<double, 3> > &palette,
-			 array3d<double> &coarse,
+			 vector<vector_fixed<float, 3> > &palette,
+			 array3d<float> &coarse,
 			 const uint8_t *enabledPixels,
-			 double initial_temperature,
-			 double final_temperature,
+			 float initial_temperature,
+			 float final_temperature,
 			 int numLevels,
 			 int repeatsPerLevel,
 			 int verbose,
@@ -491,8 +491,8 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		}
 	}
 
-	double temperature = initial_temperature;
-	double temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
+	float temperature = initial_temperature;
+	float temperature_multiplier = pow(final_temperature / initial_temperature, 1.0 / (numLevels - 1));
 
 	char visit_pending[size2d]; // indexed by y*width+x
 	int visit_xy[size2d];
@@ -501,17 +501,17 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 	int visit_cnt = 0;
 	int visit_tick = 0;
 
-	array2d<vector_fixed<double, 3> > j_palette_sum(width, height);
+	array2d<vector_fixed<float, 3> > j_palette_sum(width, height);
 
 	int pixelsChanged = 0, pixelsVisited = 0;
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
 		int levelChanged = 0;
 
-		double middle_b = b_value(weights, 0, 0, 0, 0);
+		float middle_b = b_value(weights, 0, 0, 0, 0);
 
 		// construct new palette for this level
 		if (iLevel > 0) {
-			array2d<double> s(paletteSize, paletteSize);
+			array2d<float> s(paletteSize, paletteSize);
 			compute_initial_s(s, coarse, weights);
 			refine_palette(s, coarse, image, palette);
 		}
@@ -519,7 +519,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		// compute_initial_j_palette_sum
 		for (int j_y = 0; j_y < height; j_y++) {
 			for (int j_x = 0; j_x < width; j_x++) {
-				vector_fixed<double, 3> palette_sum = vector_fixed<double, 3>();
+				vector_fixed<float, 3> palette_sum = vector_fixed<float, 3>();
 				for (unsigned int alpha = 0; alpha < paletteSize; alpha++)
 					palette_sum += coarse(j_x, j_y, alpha) * palette[alpha];
 				j_palette_sum(j_x, j_y) = palette_sum;
@@ -573,7 +573,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 					continue;
 
 				// Compute (25)
-				vector_fixed<double, 3> p_i;
+				vector_fixed<float, 3> p_i;
 				for (int y = 0; y < filterSize; y++) {
 					for (int x = 0; x < filterSize; x++) {
 						int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
@@ -585,20 +585,20 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 				p_i -= image(i_x, i_y);
 				p_i *= 2.0;
 
-				vector<double> meanfield_logs, meanfields;
-				double max_meanfield_log = -numeric_limits<double>::infinity();
-				double meanfield_sum = 0.0;
+				vector<float> meanfield_logs, meanfields;
+				float max_meanfield_log = -numeric_limits<float>::infinity();
+				float meanfield_sum = 0.0;
 				for (unsigned int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
-					// will choose a value that makes the maximum e^100.
+					// will choose a value that makes the maximum e^100. (e^80 for `float`)
 					meanfield_logs.push_back(-(palette[v].dot_product(p_i + middle_b * palette[v])) / temperature);
 					if (meanfield_logs.back() > max_meanfield_log)
 						max_meanfield_log = meanfield_logs.back();
 				}
 				for (unsigned int v = 0; v < paletteSize; v++) {
-					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 100));
+					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 80));
 					meanfield_sum += meanfields.back();
 				}
 				if (meanfield_sum == 0) {
@@ -608,16 +608,16 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 
 				// update variables and determine new palette index for pixel
 				int max_v = 0;
-				double max_weight = -1;
+				float max_weight = -1;
 
-				vector_fixed<double, 3> &j_pal = j_palette_sum(i_x, i_y);
+				vector_fixed<float, 3> &j_pal = j_palette_sum(i_x, i_y);
 				for (unsigned int v = 0; v < paletteSize; v++) {
-					double new_val = meanfields[v] / meanfield_sum;
+					float new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
 					if (new_val >= 1) new_val = 1 - 1e-10;
 
-					double delta_m_iv = new_val - coarse(i_x, i_y, v);
+					float delta_m_iv = new_val - coarse(i_x, i_y, v);
 					j_pal += delta_m_iv * palette[v];
 
 					coarse(i_x, i_y, v) = new_val;
@@ -731,7 +731,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 						gdImageSetPixel(im, i_x, i_y, gdImageColorAllocateAlpha(im, 127, 128, 129, 0x7f));
 					} else {
 						// Compute (25) including center pixel
-						vector_fixed<double, 3> p_i;
+						vector_fixed<float, 3> p_i;
 						for (int y = 0; y < filterSize; y++) {
 							for (int x = 0; x < filterSize; x++) {
 								int j_x = x - center_x + i_x, j_y = y - center_y + i_y;
@@ -762,7 +762,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 		if (verbose >= 3) {
 			static int colourCount[MAXPALETTE];
 			static int lastCount[MAXPALETTE];
-			static vector_fixed<double, 3> lastRGB[MAXPALETTE];
+			static vector_fixed<float, 3> lastRGB[MAXPALETTE];
 
 			for (int i = 0; i < paletteSize; i++)
 				colourCount[i] = 0;
@@ -774,7 +774,7 @@ void spatial_color_quant(array2d<vector_fixed<double, 3> > &image,
 				}
 			}
 			for (int i = 0; i < paletteSize; i++) {
-				vector_fixed<double, 3> diff = palette[i] * 255 - lastRGB[i];
+				vector_fixed<float, 3> diff = palette[i] * 255 - lastRGB[i];
 
 				fprintf(stderr, "%3d(%6d): %3d %3d %3d    (%8d) %4d %4d %4d\n",
 					i, colourCount[i],
@@ -807,8 +807,8 @@ const char *opt_opaqueName = NULL;
 const char *opt_snapshotName = NULL;
 float opt_stddev = 1.0;
 int opt_filterSize = 3;
-double opt_initialTemperature = 1e-5;
-double opt_finalTemperature = 1e-100;
+float opt_initialTemperature = 1e-5;
+float opt_finalTemperature = 1e-36;
 int opt_numLevels = 30;
 int opt_repeatsPerLevel = 4;
 int opt_verbose = 1;
@@ -964,14 +964,14 @@ int main(int argc, char *argv[]) {
 	 */
 
 	// allocate structures
-	array2d<double> filter1_weights(1, 1);
-	array2d<double> filter3_weights(3, 3);
-	array2d<double> filter5_weights(5, 5);
-	array2d<double> *filters[] = {NULL, &filter1_weights, NULL, &filter3_weights, NULL, &filter5_weights};
+	array2d<float> filter1_weights(1, 1);
+	array2d<float> filter3_weights(3, 3);
+	array2d<float> filter5_weights(5, 5);
+	array2d<float> *filters[] = {NULL, &filter1_weights, NULL, &filter3_weights, NULL, &filter5_weights};
 
 	filter1_weights(0, 0) = 1.0;
 
-	double sum = 0.0;
+	float sum = 0.0;
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++)
 			sum += filter3_weights(i, j) = exp(-sqrt((i - 1) * (i - 1) + (j - 1) * (j - 1)) / (opt_stddev * opt_stddev));
@@ -1045,9 +1045,9 @@ int main(int argc, char *argv[]) {
 	assert(width > 0 && height > 0);
 
 	// allocate structures
-	array2d<vector_fixed<double, 3> > image(width, height);
+	array2d<vector_fixed<float, 3> > image(width, height);
 	array2d<int> quantized_image(width, height);
-	vector<vector_fixed<double, 3> > palette;
+	vector<vector_fixed<float, 3> > palette;
 	uint8_t enabledPixels[((width * height) >> 3) + 1];
 	memset(enabledPixels, 0, ((width * height) >> 3) + 1);
 
@@ -1116,7 +1116,7 @@ int main(int argc, char *argv[]) {
 
 			printf("%3ld | %3u %3u %3u (%d pixels)\n", i - 1, got->r, got->g, got->b, got->count);
 
-			vector_fixed<double, 3> v;
+			vector_fixed<float, 3> v;
 			v(0) = got->r / 255.0;
 			v(1) = got->g / 255.0;
 			v(2) = got->b / 255.0;
@@ -1129,10 +1129,10 @@ int main(int argc, char *argv[]) {
 		 */
 
 		for (int i = 0; i < numColours; i++) {
-			vector_fixed<double, 3> v;
-			v(0) = ((double) rand()) / RAND_MAX;
-			v(1) = ((double) rand()) / RAND_MAX;
-			v(2) = ((double) rand()) / RAND_MAX;
+			vector_fixed<float, 3> v;
+			v(0) = ((float) rand()) / RAND_MAX;
+			v(1) = ((float) rand()) / RAND_MAX;
+			v(2) = ((float) rand()) / RAND_MAX;
 			palette.push_back(v);
 		}
 
@@ -1164,7 +1164,7 @@ int main(int argc, char *argv[]) {
 				// float 0-1
 			}
 
-			vector_fixed<double, 3> v;
+			vector_fixed<float, 3> v;
 			v(0) = r;
 			v(1) = g;
 			v(2) = b;
@@ -1183,7 +1183,7 @@ int main(int argc, char *argv[]) {
 
 	// for transparency, add extra colour
 	if (transparent >= 0) {
-		vector_fixed<double, 3> v;
+		vector_fixed<float, 3> v;
 		v(0) = 126 / 255.0;
 		v(1) = 127 / 255.0;
 		v(2) = 128 / 255.0;
@@ -1204,7 +1204,7 @@ int main(int argc, char *argv[]) {
 	);
 	fprintf(stderr,"%s", pJson);
 
-	array3d<double> coarse(width, height, arg_paletteSize);
+	array3d<float> coarse(width, height, arg_paletteSize);
 
 	// with octree, no need to randomize coarse
 	for (int i = 0; i < width; i++) {
