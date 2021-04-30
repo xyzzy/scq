@@ -502,6 +502,8 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 	int visit_tick = 0;
 
 	array2d<vector_fixed<float, 3> > j_palette_sum(width, height);
+	float meanfield_logs[MAXPALETTE];
+	float meanfields[MAXPALETTE];
 
 	int pixelsChanged = 0, pixelsVisited = 0;
 	for (int iLevel = 0; iLevel < numLevels; iLevel++, temperature *= temperature_multiplier) {
@@ -585,21 +587,26 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 				p_i -= image(i_x, i_y);
 				p_i *= 2.0;
 
-				vector<float> meanfield_logs, meanfields;
 				float max_meanfield_log = -numeric_limits<float>::infinity();
-				float meanfield_sum = 0.0;
 				for (unsigned int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
 					// will choose a value that makes the maximum e^100. (e^80 for `float`)
-					meanfield_logs.push_back(-(palette[v].dot_product(p_i + middle_b * palette[v])) / temperature);
-					if (meanfield_logs.back() > max_meanfield_log)
-						max_meanfield_log = meanfield_logs.back();
+
+					float m = -(palette[v].dot_product(p_i + middle_b * palette[v])) / temperature;
+
+					meanfield_logs[v] = m;
+					if (m > max_meanfield_log)
+						max_meanfield_log = m;
 				}
+
+				float meanfield_sum = 0.0;
 				for (unsigned int v = 0; v < paletteSize; v++) {
-					meanfields.push_back(exp(meanfield_logs[v] - max_meanfield_log + 80));
-					meanfield_sum += meanfields.back();
+					float m = exp(meanfield_logs[v] - max_meanfield_log + 80);
+
+					meanfields[v] = m;
+					meanfield_sum += m;
 				}
 				if (meanfield_sum == 0) {
 					cout << "Fatal error: Meanfield sum underflowed. Please contact developer." << endl;

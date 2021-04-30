@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-30 11:18:54 Changed: Type `meanfield` from vector to array. 
 2021-04-30 11:04:08 Changed: Better transparency handling.
 2021-04-30 10:55:55 Changed: Replaced `double` with `float`.
 2021-04-30 10:42:13 Changed: Normalize `image` by scaling with -0.5.  
