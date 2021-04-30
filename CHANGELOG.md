@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## 2021-04-30 13:19:50 [Version 0.4.0]
+
 ```
 2021-04-30 13:15:08 Added: Save final palette with frequency count.
 2021-04-30 12:54:26 Added: `--freeze`.
@@ -49,7 +51,8 @@ NOTE: Each of the above are minor changes that effect the outcome of the anneali
 2021-24-01 11:28:59 Historic commit.
 ```
 
-[Unreleased]: https://github.com/xyzzy/scq/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/xyzzy/scq/compare/v0.4.0...HEAD
+[Version 0.4.0]: https://github.com/xyzzy/scq/compare/v0.3.0...v0.4.0
 [Version 0.3.0]: https://github.com/xyzzy/scq/compare/v0.2.0...v0.3.0
 [Version 0.2.0]: https://github.com/xyzzy/scq/compare/v0.1.0...v0.2.0
 [Version 0.1.0]: https://github.com/xyzzy/scq/tree/v0.1.0
