@@ -1152,28 +1152,36 @@ int main(int argc, char *argv[]) {
 		arg_paletteSize = 0;
 
 		float r, g, b;
-		while (fscanf(in, "%f %f %f\n", &r, &g, &b) == 3) {
-			if (arg_paletteSize >= MAXPALETTE) {
-				fprintf(stderr, "too many colours in palette \"%s\"\n", opt_paletteName);
+		char line[256];
+		int lineNr = 0;
+		while (fgets(line, sizeof line, in)) {
+			lineNr++;
+			if (sscanf(line, "%f %f %f\n", &r, &g, &b) == 3) {
+				if (arg_paletteSize >= MAXPALETTE) {
+					fprintf(stderr, "too many colours in palette \"%s\"\n", opt_paletteName);
+					exit(1);
+				}
+
+				if (r > 1 || g > 1 || b > 1) {
+					// integer 0-255
+					r /= 255.0;
+					g /= 255.0;
+					b /= 255.0;
+				} else {
+					// float 0-1
+				}
+
+				vector_fixed<float, 3> v;
+				v(0) = r;
+				v(1) = g;
+				v(2) = b;
+				palette.push_back(v);
+
+				arg_paletteSize++;
+			} else {
+				fprintf(stderr, "Error in line %d of palette \"%s\"\n", lineNr, opt_paletteName);
 				exit(1);
 			}
-
-			if (r > 1 || g > 1 || b > 1) {
-				// integer 0-255
-				r /= 255.0;
-				g /= 255.0;
-				b /= 255.0;
-			} else {
-				// float 0-1
-			}
-
-			vector_fixed<float, 3> v;
-			v(0) = r;
-			v(1) = g;
-			v(2) = b;
-			palette.push_back(v);
-
-			arg_paletteSize++;
 		}
 
 		fclose(in);
@@ -1206,7 +1214,20 @@ int main(int argc, char *argv[]) {
 
 	spatial_color_quant(image, *filters[opt_filterSize], quantized_image, palette, coarse, enabledPixels);
 
+	// frequency count colours
+	static int colourCount[MAXPALETTE];
+	for (int i = 0; i < arg_paletteSize; i++) colourCount[i] = 0;
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			int i = quantized_image(x, y);
+			colourCount[i]++;
+		}
+	}
+
 	if (arg_outputName) {
+		/*
+		 * Save image
+		 */
 		FILE *fil = fopen(arg_outputName, "w");
 		if (fil == NULL) {
 			fprintf(stderr, "Could not open output file \"%s\"\n", arg_outputName);
@@ -1254,7 +1275,26 @@ int main(int argc, char *argv[]) {
 		gdImageDestroy(im);
 		fclose(fil);
 
+		/*
+		 * Save palette
+		 */
 		char *fname;
+		asprintf(&fname, "%s.pal", arg_outputName);
+		fil = fopen(fname, "w");
+		if (fil == NULL) {
+			fprintf(stderr, "Could not open output file \"%s\"\n", fname);
+			exit(1);
+		}
+
+		for (int i = 0; i < arg_paletteSize; i++)
+			fprintf(fil, "%3d %3d %3d # %d\n", (int) (palette[i](0) * 255), (int) (palette[i](1) * 255), (int) (palette[i](2) * 255), colourCount[i]);
+
+		fclose(fil);
+		free(fname);
+
+		/*
+		 * Save json
+		 */
 		asprintf(&fname, "%s.json", arg_outputName);
 		fil = fopen(fname, "w");
 		if (fil == NULL) {
@@ -1264,6 +1304,7 @@ int main(int argc, char *argv[]) {
 		fprintf(fil, "%s", pJson);
 
 		fclose(fil);
+		free(fname);
 	}
 
 	if (opt_opaqueName) {
@@ -1302,18 +1343,7 @@ int main(int argc, char *argv[]) {
 		fclose(fil);
 	}
 
-	if (1) {
-		static int colourCount[MAXPALETTE];
-
-		for (int i = 0; i < arg_paletteSize; i++)
-			colourCount[i] = 0;
-
-		for (int y = 0; y < height; y++) {
-			for (int x = 0; x < width; x++) {
-				int i = quantized_image(x, y);
-				colourCount[i]++;
-			}
-		}
+	if (opt_verbose) {
 		for (int i = 0; i < arg_paletteSize; i++)
 			fprintf(stderr, "%3d(%6d): %3d %3d %3d\n", i, colourCount[i], (int) (palette[i](0) * 255), (int) (palette[i](1) * 255), (int) (palette[i](2) * 255));
 	}

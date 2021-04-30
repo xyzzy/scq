@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-04-30 13:15:08 Added: Save final palette with frequency count.
 2021-04-30 12:54:26 Added: `--freeze`.
 2021-04-30 11:18:54 Changed: Type `meanfield` from vector to array. 
 2021-04-30 11:04:08 Changed: Better transparency handling.
