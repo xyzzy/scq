@@ -377,6 +377,16 @@ vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	return result;
 }
 
+const char *timeAsString(void) {
+	static char tstr[64];
+
+	time_t t = time(0);
+	struct tm *tm = localtime(&t);
+	strftime(tstr, sizeof(tstr), "%Y-%m-%d %H:%M:%S", tm);
+
+	return tstr;
+}
+
 const char *arg_inputName;
 int arg_paletteSize;
 const char *arg_outputName;
@@ -665,7 +675,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 
 				if (--visit_tick <= 0) {
 					if (opt_verbose >= 2) {
-						fprintf(stderr, "level=%d iRepeat=%d temperature=%g visited=%d changed=%d\n", iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged);
+						fprintf(stderr, "%s level=%d iRepeat=%d temperature=%g visited=%d changed=%d\n", timeAsString(), iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged);
 						pixelsVisited = pixelsChanged = 0;
 					}
 					visit_tick = visit_cnt;
@@ -711,7 +721,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 			}
 
 			if (opt_verbose >= 2) {
-				fprintf(stderr, "level=%d iRepeat=%d temperature=%g visited=%d changed=%d diff=%.8g\n", iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged, diff);
+				fprintf(stderr, "%s level=%d iRepeat=%d temperature=%g visited=%d changed=%d diff=%.8g\n", timeAsString(), iLevel, iRepeat, temperature, pixelsVisited, pixelsChanged, diff);
 				pixelsVisited = pixelsChanged = 0;
 			}
 			if (!repeatChanged)
@@ -805,7 +815,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 		}
 
 		if (opt_verbose == 1) {
-			fprintf(stderr, "level=%d temperature=%g visited=%d changed=%d diff=%.8g\n", iLevel, temperature, pixelsVisited, pixelsChanged, diff);
+			fprintf(stderr, "%s level=%d temperature=%g visited=%d changed=%d diff=%.8g\n", timeAsString(), iLevel, temperature, pixelsVisited, pixelsChanged, diff);
 			pixelsVisited = pixelsChanged = 0;
 		}
 		if (!levelChanged)

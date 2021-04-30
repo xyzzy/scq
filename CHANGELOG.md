@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+```
+2021-04-30 22:29:09 Added: Timestamp prefix.
+```
+
 ## 2021-04-30 13:19:50 [Version 0.4.0]
 
 ```
