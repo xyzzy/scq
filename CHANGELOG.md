@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ```
+2021-05-01 22:44:20 Fixed: Freeze.
 2021-04-30 22:29:09 Added: Timestamp prefix.
 ```
 

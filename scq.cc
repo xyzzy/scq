@@ -371,7 +371,7 @@ float b_value(array2d<float> &b, int i_x, int i_y, int j_x, int j_y) {
 template<typename T, int length>
 vector<T> extract_vector_layer_1d(vector<vector_fixed<T, length> > s, int k) {
 	vector<T> result;
-	for (unsigned int i = 0; i < s.size(); i++) {
+	for (int i = 0; i < s.size(); i++) {
 		result.push_back(s[i](k));
 	}
 	return result;
@@ -453,7 +453,7 @@ void refine_palette(array2d<float> &s,
 	}
 
 	vector<vector_fixed<float, 3> > r(paletteSize);
-	for (unsigned int v = 0; v < paletteSize; v++) {
+	for (int v = 0; v < paletteSize; v++) {
 		for (int i_y = 0; i_y < coarse.get_height(); i_y++) {
 			for (int i_x = 0; i_x < coarse.get_width(); i_x++) {
 				r[v] += coarse(i_x, i_y, v) * image(i_x, i_y);
@@ -463,14 +463,15 @@ void refine_palette(array2d<float> &s,
 
 	array2d<float> sInv = s.matrix_inverse();
 
-	for (unsigned int k = opt_freeze; k < 3; k++) {
+	for (int k = 0; k < 3; k++) {
 		vector<float> R_k = extract_vector_layer_1d(r, k);
 		vector<float> palette_channel = sInv * R_k;
-		for (unsigned int v = 0; v < paletteSize; v++) {
+		for (int v = opt_freeze; v < paletteSize; v++) {
 			float val = palette_channel[v];
 			if (val < 0) val = 0;
 			if (val > 1) val = 1;
-			palette[v](k) = val;
+
+			palette[v](k) = round(val * 255.0) / 255.0;
 		}
 	}
 }
@@ -526,7 +527,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 		for (int j_y = 0; j_y < height; j_y++) {
 			for (int j_x = 0; j_x < width; j_x++) {
 				vector_fixed<float, 3> palette_sum = vector_fixed<float, 3>();
-				for (unsigned int alpha = 0; alpha < paletteSize; alpha++)
+				for (int alpha = 0; alpha < paletteSize; alpha++)
 					palette_sum += coarse(j_x, j_y, alpha) * palette[alpha];
 				j_palette_sum(j_x, j_y) = palette_sum;
 			}
@@ -592,7 +593,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 				p_i *= 2.0;
 
 				float max_meanfield_log = -numeric_limits<float>::infinity();
-				for (unsigned int v = 0; v < paletteSize; v++) {
+				for (int v = 0; v < paletteSize; v++) {
 					// Update m_{pi(i)v}^I according to (23)
 					// We can subtract an arbitrary factor to prevent overflow,
 					// since only the weight relative to the sum matters, so we
@@ -606,7 +607,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 				}
 
 				float meanfield_sum = 0.0;
-				for (unsigned int v = 0; v < paletteSize; v++) {
+				for (int v = 0; v < paletteSize; v++) {
 					float m = exp(meanfield_logs[v] - max_meanfield_log + 80);
 
 					meanfields[v] = m;
@@ -622,7 +623,7 @@ void spatial_color_quant(array2d<vector_fixed<float, 3> > &image,
 				float max_weight = -1;
 
 				vector_fixed<float, 3> &j_pal = j_palette_sum(i_x, i_y);
-				for (unsigned int v = 0; v < paletteSize; v++) {
+				for (int v = 0; v < paletteSize; v++) {
 					float new_val = meanfields[v] / meanfield_sum;
 					// Prevent the matrix S from becoming singular
 					if (new_val <= 0) new_val = 1e-10;
@@ -1198,7 +1199,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	char *pJson;
-	asprintf(&pJson, "{\"srcName\":\"%s\",\"width\":%d,\"height\":%d,\"paletteSize\":%d,\"transparent\":%d,\"seed\":%d,\"filter\":%d,\"numLevels\":%d,\"repeatsPerLevel\":%d,\"initialTemperature\":%g,\"finalTemperature\":%g,\"stddef\":%f,\"palette\":\"%s\",\"visit2\":%d}\n",
+	asprintf(&pJson, "{\"srcName\":\"%s\",\"width\":%d,\"height\":%d,\"paletteSize\":%d,\"transparent\":%d,\"seed\":%d,\"filter\":%d,\"numLevels\":%d,\"repeatsPerLevel\":%d,\"initialTemperature\":%g,\"finalTemperature\":%g,\"stddef\":%f,\"palette\":\"%s\",\"freeze\":%d,\"visit2\":%d}\n",
 		 arg_inputName,
 		 width, height,
 		 arg_paletteSize, transparent,
@@ -1206,6 +1207,7 @@ int main(int argc, char *argv[]) {
 		 opt_numLevels, opt_repeatsPerLevel, opt_initialTemperature, opt_finalTemperature,
 		 opt_stddev,
 		 opt_paletteName ? opt_paletteName : "",
+		 opt_freeze,
 		 opt_visit2
 	);
 	fprintf(stderr, "%s", pJson);
