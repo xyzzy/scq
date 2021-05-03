@@ -8,6 +8,8 @@ image: assets/favimage-840x472.jpg
 
 Spatial Colour Quantization, True-colour images to palette conversion
 
+The [bezeye-media](https://github.com/xyzzy/bezeye-media) project demonstrates the use of SCQ.
+
 ### Welcome to the Wonderful World of colour compression
 
 Spatial Colour Quantization is a lossy colour compression.  
